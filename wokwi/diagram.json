@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "author": "Hamsavarthan",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-st-nucleo-f103rb",
+      "id": "mcu",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -120,
+      "left": 220,
+      "attrs": { "temperature": "25.4", "humidity": "60.2" }
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "mpu1",
+      "top": 80,
+      "left": 240,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -180,
+      "left": -220,
+      "attrs": { "i2cAddress": "0x27", "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot1",
+      "top": 200,
+      "left": -240,
+      "attrs": { "value": "1023" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -80,
+      "left": 180,
+      "attrs": { "value": "4700" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -260,
+      "left": -80,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": -260,
+      "left": -40,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    ["mcu:PB7",  "mpu1:SDA",  "blue",  []],
+    ["mcu:PB6",  "mpu1:SCL",  "yellow", []],
+    ["mpu1:VCC", "mcu:3.3V",  "red",   []],
+    ["mpu1:GND", "mcu:GND",   "black", []],
+    ["mpu1:AD0", "mcu:GND",   "black", []],
+
+    ["mcu:PB7",  "lcd1:SDA",  "blue",  []],
+    ["mcu:PB6",  "lcd1:SCL",  "yellow", []],
+    ["lcd1:VCC", "mcu:5V",    "red",   []],
+    ["lcd1:GND", "mcu:GND",   "black", []],
+
+    ["mcu:PB0",  "r1:1",      "green", []],
+    ["r1:2",     "dht1:SDA",  "green", []],
+    ["dht1:VCC", "mcu:3.3V",  "red",   []],
+    ["dht1:GND", "mcu:GND",   "black", []],
+
+    ["pot1:SIG", "mcu:PA0",   "orange", []],
+    ["pot1:VCC", "mcu:3.3V",  "red",   []],
+    ["pot1:GND", "mcu:GND",   "black", []],
+
+    ["mcu:PC13", "r2:1",      "purple", []],
+    ["r2:2",     "led1:A",    "purple", []],
+    ["led1:K",   "mcu:GND",   "black", []]
+  ]
+}
