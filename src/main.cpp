@@ -261,7 +261,7 @@ static void Peripherals_Init(void)
 }
 
 // ─── FreeRTOS Static Memory Hooks (required for configSUPPORT_STATIC_ALLOCATION) ──
-void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+extern "C" void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
                                    StackType_t  **ppxIdleTaskStackBuffer,
                                    uint32_t      *pulIdleTaskStackSize)
 {
@@ -272,7 +272,7 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
     *pulIdleTaskStackSize   = configMINIMAL_STACK_SIZE;
 }
 
-void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
+extern "C" void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
                                     StackType_t  **ppxTimerTaskStackBuffer,
                                     uint32_t      *pulTimerTaskStackSize)
 {
@@ -284,14 +284,14 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 }
 
 // ─── Stack Overflow Hook ──────────────────────────────────────────────────────
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
     (void)xTask;
     ErrorHandler_StackOverflow(pcTaskName);
 }
 
 // ─── Malloc Fail Hook (catches any accidental heap use) ───────────────────────
-void vApplicationMallocFailedHook(void)
+extern "C" void vApplicationMallocFailedHook(void)
 {
     ErrorHandler_Fatal(ERR_HEAP_ALLOC_ATTEMPTED);
 }
