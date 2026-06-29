@@ -1,0 +1,9 @@
+src/tasks.c linguist-vendored
+src/queue.c linguist-vendored
+src/list.c linguist-vendored
+src/timers.c linguist-vendored
+src/event_groups.c linguist-vendored
+src/stream_buffer.c linguist-vendored
+src/port.c linguist-vendored
+src/heap_4.c linguist-vendored
+src/assert.c linguist-vendored
