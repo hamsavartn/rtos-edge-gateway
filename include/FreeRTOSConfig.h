@@ -101,4 +101,4 @@ extern void vAssertCalled(const char *file, uint32_t line);
 #undef configSUPPORT_DYNAMIC_ALLOCATION
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
 #undef configTOTAL_HEAP_SIZE
-#define configTOTAL_HEAP_SIZE 10240
+#define configTOTAL_HEAP_SIZE 2048
