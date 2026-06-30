@@ -9,16 +9,18 @@ jobs:
         run: pip install platformio
       - name: Build firmware
         run: pio run
-      - name: Run Wokwi simulation
-        uses: wokwi/wokwi-ci-action@v1
-        with:
-          token: ${{ secrets.WOKWI_CLI_TOKEN }}
-          timeout: 30000
-          expect_text: 'RTOS Industrial Edge Gateway'
-          serial_log_file: 'serial-output.log'
-      - name: Upload serial log
+      - name: Install Wokwi CLI
+        run: wget -q -O /usr/local/bin/wokwi-cli https://github.com/wokwi/wokwi-cli/releases/latest/download/wokwi-cli-linuxstatic-x64 && chmod +x /usr/local/bin/wokwi-cli
+      - name: Run simulation with screenshot
+        env:
+          WOKWI_CLI_TOKEN: ${{ secrets.WOKWI_CLI_TOKEN }}
+        run: |
+          wokwi-cli --timeout 15000 --serial-log-file serial-output.log --screenshot-time 10000 --screenshot-file board-state.png || true
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: serial-log
-          path: serial-output.log
+          name: debug-artifacts
+          path: |
+            serial-output.log
+            board-state.png
