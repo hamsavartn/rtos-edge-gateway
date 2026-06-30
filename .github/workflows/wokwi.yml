@@ -13,4 +13,12 @@ jobs:
         uses: wokwi/wokwi-ci-action@v1
         with:
           token: ${{ secrets.WOKWI_CLI_TOKEN }}
-          timeout: "30000"
+          timeout: 30000
+          expect_text: 'RTOS Industrial Edge Gateway'
+          serial_log_file: 'serial-output.log'
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: serial-log
+          path: serial-output.log
