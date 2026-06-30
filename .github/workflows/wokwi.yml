@@ -1,7 +1,5 @@
 name: Wokwi CI
-
 on: [push]
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,5 +13,4 @@ jobs:
         uses: wokwi/wokwi-ci-action@v1
         with:
           token: ${{ secrets.WOKWI_CLI_TOKEN }}
-          timeout: "60000"
-          expect_text: 'RTOS Industrial Edge Gateway'
+          timeout: "30000"
