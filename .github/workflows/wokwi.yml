@@ -15,5 +15,5 @@ jobs:
         uses: wokwi/wokwi-ci-action@v1
         with:
           token: ${{ secrets.WOKWI_CLI_TOKEN }}
-          timeout: 60
+          timeout: "60000"
           expect_text: 'RTOS Industrial Edge Gateway'

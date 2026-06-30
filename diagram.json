@@ -4,7 +4,7 @@
   "editor": "wokwi",
   "parts": [
     {
-      "type": "wokwi-st-nucleo-f103rb",
+      "type": "board-stm32-bluepill",
       "id": "mcu",
       "top": 0,
       "left": 0,
@@ -83,6 +83,6 @@
 
     ["mcu:PC13", "r2:1",      "purple", []],
     ["r2:2",     "led1:A",    "purple", []],
-    ["led1:K",   "mcu:GND",   "black", []]
+    ["led1:C",   "mcu:GND",   "black", []]
   ]
 }
