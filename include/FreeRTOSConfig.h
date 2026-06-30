@@ -21,7 +21,7 @@ extern "C" {
 #define configUSE_TICKLESS_IDLE                 0
 
 // ─── Clock ────────────────────────────────────────────────────────────────────
-#define configCPU_CLOCK_HZ                      72000000UL
+#define configCPU_CLOCK_HZ                      64000000UL
 #define configTICK_RATE_HZ                      1000U       // 1 ms resolution
 
 // ─── Task Priorities ──────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@
 #include "timers.h"
 
 // ─── System Clock ─────────────────────────────────────────────────────────────
-#define SYS_CLOCK_HZ         72000000UL
+#define SYS_CLOCK_HZ         64000000UL
 #define TICK_RATE_HZ         1000U       // 1 ms tick
 
 // ─── Task Stack Sizes (words) ─────────────────────────────────────────────────

@@ -211,12 +211,12 @@ static void SystemClock_Config(void)
     RCC_OscInitTypeDef RCC_OscInit = {};
     RCC_ClkInitTypeDef RCC_ClkInit = {};
 
-    RCC_OscInit.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-    RCC_OscInit.HSEState       = RCC_HSE_ON;
-    RCC_OscInit.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+    RCC_OscInit.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInit.HSIState       = RCC_HSI_ON;
+    RCC_OscInit.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
     RCC_OscInit.PLL.PLLState   = RCC_PLL_ON;
-    RCC_OscInit.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
-    RCC_OscInit.PLL.PLLMUL     = RCC_PLL_MUL9; // 8 MHz * 9 = 72 MHz
+    RCC_OscInit.PLL.PLLSource  = RCC_PLLSOURCE_HSI_DIV2;
+    RCC_OscInit.PLL.PLLMUL     = RCC_PLL_MUL16; // (8MHz/2) * 16 = 64 MHz
     HAL_RCC_OscConfig(&RCC_OscInit);
 
     RCC_ClkInit.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK |
