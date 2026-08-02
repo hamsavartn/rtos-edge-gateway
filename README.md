@@ -1,4 +1,4 @@
-# RTOS-Based Industrial Edge Gateway
+# RTOS-Based Industrial Edge Gateway(made with STM32)
 ### Real-Time Telemetry Manager | STM32F103C8T6 + FreeRTOS
 
 ![Platform](https://img.shields.io/badge/Platform-STM32F103C8T6-blue)
