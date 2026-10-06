@@ -94,6 +94,10 @@ extern void vAssertCalled(const char *file, uint32_t line);
 #define INCLUDE_xSemaphoreGetMutexHolder     1
 #define INCLUDE_pcTaskGetName                1
 
+#define vPortSVCHandler SVC_Handler
+#define xPortPendSVHandler PendSV_Handler
+// SysTick_Handler is implemented manually in main.cpp to also call HAL_IncTick
+
 #ifdef __cplusplus
 }
 #endif

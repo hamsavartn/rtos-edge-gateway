@@ -324,3 +324,18 @@ extern "C" void vApplicationMallocFailedHook(void)
 {
     ErrorHandler_Fatal(ERR_HEAP_ALLOC_ATTEMPTED);
 }
+
+// ─── SysTick Handler ──────────────────────────────────────────────────────────
+// Required because we don't use STM32Cube generated stm32f1xx_it.c
+extern "C" void SysTick_Handler(void)
+{
+    // 1. Increment HAL tick (required for HAL_Delay)
+    HAL_IncTick();
+
+    // 2. Increment FreeRTOS tick if scheduler is running
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+    {
+        extern void xPortSysTickHandler(void);
+        xPortSysTickHandler();
+    }
+}
