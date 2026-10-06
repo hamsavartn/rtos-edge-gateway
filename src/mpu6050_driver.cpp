@@ -58,7 +58,7 @@ HAL_StatusTypeDef MPU6050_Init(void)
     HAL_GPIO_Init(GPIOB, &gpio);
 
     hi2c1.Instance             = I2C1;
-    hi2c1.Init.ClockSpeed      = 400000;    // 400 kHz Fast Mode
+    hi2c1.Init.ClockSpeed      = 100000;    // 100 kHz Standard Mode (Shared with PCF8574 LCD)
     hi2c1.Init.DutyCycle       = I2C_DUTYCYCLE_2;
     hi2c1.Init.OwnAddress1     = 0;
     hi2c1.Init.AddressingMode  = I2C_ADDRESSINGMODE_7BIT;

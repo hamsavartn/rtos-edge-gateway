@@ -41,39 +41,39 @@
 
 // Task 1: ADC Sensor
 static StaticTask_t  xADCTaskBuffer;
-static StackType_t   xADCStack[STACK_SIZE_SENSOR];
+alignas(8) static StackType_t   xADCStack[STACK_SIZE_SENSOR];
 
 // Task 2: DHT22 Sensor
 static StaticTask_t  xDHT22TaskBuffer;
-static StackType_t   xDHT22Stack[STACK_SIZE_SENSOR];
+alignas(8) static StackType_t   xDHT22Stack[STACK_SIZE_SENSOR];
 
 // Task 3: MPU6050 Sensor
 static StaticTask_t  xMPU6050TaskBuffer;
-static StackType_t   xMPU6050Stack[STACK_SIZE_SENSOR];
+alignas(8) static StackType_t   xMPU6050Stack[STACK_SIZE_SENSOR];
 
 // Task 4: UART Sensor
 static StaticTask_t  xUARTSensorTaskBuffer;
-static StackType_t   xUARTSensorStack[STACK_SIZE_SENSOR];
+alignas(8) static StackType_t   xUARTSensorStack[STACK_SIZE_SENSOR];
 
 // Task 5: Queue Manager
 static StaticTask_t  xQueueMgrTaskBuffer;
-static StackType_t   xQueueMgrStack[STACK_SIZE_MANAGER];
+alignas(8) static StackType_t   xQueueMgrStack[STACK_SIZE_MANAGER];
 
 // Task 6: Output Manager
 static StaticTask_t  xOutputTaskBuffer;
-static StackType_t   xOutputStack[STACK_SIZE_MANAGER];
+alignas(8) static StackType_t   xOutputStack[STACK_SIZE_MANAGER];
 
 // Task 7: Error Handler
 static StaticTask_t  xErrorTaskBuffer;
-static StackType_t   xErrorStack[STACK_SIZE_SYSTEM];
+alignas(8) static StackType_t   xErrorStack[STACK_SIZE_SYSTEM];
 
 // Task 8: Diagnostics
 static StaticTask_t  xDiagTaskBuffer;
-static StackType_t   xDiagStack[STACK_SIZE_SYSTEM];
+alignas(8) static StackType_t   xDiagStack[STACK_SIZE_SYSTEM];
 
 // Task 9: Watchdog
 static StaticTask_t  xWatchdogTaskBuffer;
-static StackType_t   xWatchdogStack[STACK_SIZE_SYSTEM];
+alignas(8) static StackType_t   xWatchdogStack[STACK_SIZE_SYSTEM];
 
 static StaticEventGroup_t xHealthEventGroup;
 EventGroupHandle_t xHealthGroupHandle = nullptr;
@@ -109,11 +109,13 @@ int main(void)
 
     xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
 
-    // Initialize IWDG directly via hardware registers for ~2.0s at 40kHz LSI
+    // Disable IWDG in simulation to isolate instant-reset issues
+    /*
     IWDG->KR = 0x5555; // Enable write access
     IWDG->PR = 0x04;   // Prescaler 64
     IWDG->RLR = 1249;  // Reload value
     IWDG->KR = 0xCCCC; // Start IWDG
+    */
 
     // ── Spawn Task 1: ADC Sensor ─────────────────────────────────────────────
     hADCTask = xTaskCreateStatic(
@@ -285,7 +287,6 @@ static void Peripherals_Init(void)
     UART_Driver_Init();       // USART1 — PA9 TX, PA10 RX (115200 baud)
     ADC_Driver_Init();        // ADC1   — PA0 Channel 0
     MPU6050_Init();           // I2C1   — PB6 SCL, PB7 SDA
-    LCD_Driver_Init();        // I2C1   — shared with MPU6050 (0x27 addr)
     UARTSensor_Driver_Init(); // USART2 — PA2 TX, PA3 RX (9600 baud)
 }
 

@@ -193,13 +193,17 @@ void vTaskOutputManager(void *pvParams)
     (void)pvParams;
     OutputPacket_t pkt;
     char           uart_buf[64];
+    HAL_StatusTypeDef lcdStatus;
 
-    // Initial boot message to verify LCD is working
-    LCD_Clear();
-    LCD_SetCursor(0, 0);
-    LCD_Print("Gateway Booting");
-    LCD_SetCursor(1, 0);
-    LCD_Print("Waiting for data");
+    // Attempt to initialize the LCD through the translation driver
+    // If initialization fails, the task enters the loop but will 
+    // consistently fail subsequent writes (or skip petting the watchdog), eventually triggering the IWDG.
+    lcdStatus = LCD_Init();
+    if (lcdStatus == HAL_OK) lcdStatus = LCD_Clear();
+    if (lcdStatus == HAL_OK) lcdStatus = LCD_SetCursor(0, 0);
+    if (lcdStatus == HAL_OK) lcdStatus = LCD_Print("Gateway Booting");
+    if (lcdStatus == HAL_OK) lcdStatus = LCD_SetCursor(1, 0);
+    if (lcdStatus == HAL_OK) lcdStatus = LCD_Print("Waiting for data");
 
     for (;;)
     {
@@ -219,17 +223,35 @@ void vTaskOutputManager(void *pvParams)
             static uint32_t last_lcd_update = 0;
             if (pkt.timestamp_ms - last_lcd_update > 500) {
                 last_lcd_update = pkt.timestamp_ms;
-                LCD_Clear();
-                LCD_SetCursor(0, 0);
-                LCD_Print((char*)pkt.line1);
-                LCD_SetCursor(1, 0);
-                LCD_Print((char*)pkt.line2);
+                
+                lcdStatus = LCD_Clear();
+                if (lcdStatus == HAL_OK) {
+                    LCD_SetCursor(0, 0);
+                    LCD_Print((char*)pkt.line1);
+                    LCD_SetCursor(1, 0);
+                    lcdStatus = LCD_Print((char*)pkt.line2);
+                }
             }
 
             // Blink status LED on successful output
             HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+
+            /* 
+             * Conditional Health Reporting:
+             * Only update the watchdog event group if the LCD is successfully written.
+             * If the HAL returns HAL_ERROR (e.g., NACK due to wrong address) or 
+             * HAL_BUSY (bus contention), the bit is not set. The IWDG will reset the gateway.
+             */
+            if (lcdStatus == HAL_OK) {
+                xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
+            }
+        } else {
+            // No data received within timeout, but task is still healthy.
+            // Only pet watchdog if the LCD isn't in an error state.
+            if (lcdStatus == HAL_OK) {
+                xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
+            }
         }
-        xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
     }
 }
 
