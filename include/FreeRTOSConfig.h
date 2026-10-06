@@ -57,7 +57,7 @@ extern "C" {
 
 // ─── Debug & Stats ────────────────────────────────────────────────────────────
 #define configUSE_TRACE_FACILITY                1
-#define configUSE_STATS_FORMATTING_FUNCTIONS    1
+#define configUSE_STATS_FORMATTING_FUNCTIONS    0
 #define configGENERATE_RUN_TIME_STATS           0
 #define configRECORD_STACK_HIGH_ADDRESS         1
 
