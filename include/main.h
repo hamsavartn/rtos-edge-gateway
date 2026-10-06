@@ -18,6 +18,7 @@
 #include "queue.h"
 #include "semphr.h"
 #include "timers.h"
+#include "event_groups.h"
 
 // ─── System Clock ─────────────────────────────────────────────────────────────
 #define SYS_CLOCK_HZ         64000000UL
@@ -30,9 +31,21 @@
 
 // ─── Task Priorities ──────────────────────────────────────────────────────────
 // Higher number = higher priority in FreeRTOS
-#define PRIORITY_SYSTEM      (configMAX_PRIORITIES - 1)   // 4: Error/Diag
-#define PRIORITY_MANAGER     (configMAX_PRIORITIES - 2)   // 3: Queue/Output
-#define PRIORITY_SENSOR      (configMAX_PRIORITIES - 3)   // 2: All sensors
+#define PRIORITY_WATCHDOG    (configMAX_PRIORITIES - 1)   // 4: Watchdog (Highest)
+#define PRIORITY_SYSTEM      (configMAX_PRIORITIES - 2)   // 3: Error/Diag
+#define PRIORITY_MANAGER     (configMAX_PRIORITIES - 3)   // 2: Queue/Output
+#define PRIORITY_SENSOR      (configMAX_PRIORITIES - 4)   // 1: All sensors
+
+// ─── Task Health Monitor Bitmasks ─────────────────────────────────────────────
+#define TASK_ADC_BIT         (1 << 0)
+#define TASK_DHT22_BIT       (1 << 1)
+#define TASK_MPU6050_BIT     (1 << 2)
+#define TASK_UART_SENS_BIT   (1 << 3)
+#define TASK_QUEUE_MGR_BIT   (1 << 4)
+#define TASK_OUTPUT_BIT      (1 << 5)
+#define TASK_ERROR_HND_BIT   (1 << 6)
+#define TASK_DIAG_BIT        (1 << 7)
+#define ALL_TASKS_MASK       (0xFF)
 
 // ─── Queue Depths (static, pre-allocated) ────────────────────────────────────
 #define QUEUE_DEPTH_ADC      16U
@@ -160,6 +173,7 @@ void vTaskQueueManager   (void *pvParams);
 void vTaskOutputManager  (void *pvParams);
 void vTaskErrorHandler   (void *pvParams);
 void vTaskDiagnostics    (void *pvParams);
+void vTaskWatchdog       (void *pvParams);
 
 // ─── Global Task Handles (defined in main.cpp) ───────────────────────────────
 extern TaskHandle_t hADCTask;
@@ -170,3 +184,5 @@ extern TaskHandle_t hQueueMgrTask;
 extern TaskHandle_t hOutputTask;
 extern TaskHandle_t hErrorTask;
 extern TaskHandle_t hDiagTask;
+extern TaskHandle_t hWatchdogTask;
+extern EventGroupHandle_t xHealthGroupHandle;

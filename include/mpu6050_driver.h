@@ -10,3 +10,4 @@ typedef struct {
 HAL_StatusTypeDef  MPU6050_Init(void);
 HAL_StatusTypeDef  MPU6050_ReadAll(MPU6050_RawData_t *out);
 I2C_HandleTypeDef* MPU6050_GetI2CHandle(void);
+void MPU6050_Recover(void);

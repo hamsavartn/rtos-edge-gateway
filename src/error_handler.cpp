@@ -124,10 +124,12 @@ void vTaskErrorHandler(void *pvParams)
         }
 
         // ── Check Stack Watermarks every 5 seconds ────────────────────────
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        static TickType_t last_stack_check = 0;
+        if (xTaskGetTickCount() - last_stack_check >= pdMS_TO_TICKS(5000)) {
+            last_stack_check = xTaskGetTickCount();
 
-        extern TaskHandle_t hADCTask, hDHT22Task, hMPU6050Task;
-        extern TaskHandle_t hUARTSensTask, hQueueMgrTask, hOutputTask, hDiagTask;
+            extern TaskHandle_t hADCTask, hDHT22Task, hMPU6050Task;
+            extern TaskHandle_t hUARTSensTask, hQueueMgrTask, hOutputTask, hDiagTask;
 
         const struct { TaskHandle_t h; const char *name; } tasks[] = {
             { hADCTask,      "ADC_Sens"  },
@@ -150,5 +152,8 @@ void vTaskErrorHandler(void *pvParams)
                 ErrorHandler_Report(ERR_STACK_OVERFLOW, tasks[i].name);
             }
         }
+
+        xEventGroupSetBits(xHealthGroupHandle, TASK_ERROR_HND_BIT);
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

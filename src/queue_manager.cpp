@@ -178,6 +178,7 @@ void vTaskQueueManager(void *pvParams)
         }
 
         // Yield for one tick — prevents starving lower-priority tasks
+        xEventGroupSetBits(xHealthGroupHandle, TASK_QUEUE_MGR_BIT);
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

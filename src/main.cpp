@@ -71,6 +71,13 @@ static StackType_t   xErrorStack[STACK_SIZE_SYSTEM];
 static StaticTask_t  xDiagTaskBuffer;
 static StackType_t   xDiagStack[STACK_SIZE_SYSTEM];
 
+// Task 9: Watchdog
+static StaticTask_t  xWatchdogTaskBuffer;
+static StackType_t   xWatchdogStack[STACK_SIZE_SYSTEM];
+
+static StaticEventGroup_t xHealthEventGroup;
+EventGroupHandle_t xHealthGroupHandle = nullptr;
+
 // ─── Task Handles ─────────────────────────────────────────────────────────────
 TaskHandle_t hADCTask       = nullptr;
 TaskHandle_t hDHT22Task     = nullptr;
@@ -80,6 +87,7 @@ TaskHandle_t hQueueMgrTask  = nullptr;
 TaskHandle_t hOutputTask    = nullptr;
 TaskHandle_t hErrorTask     = nullptr;
 TaskHandle_t hDiagTask      = nullptr;
+TaskHandle_t hWatchdogTask  = nullptr;
 
 // ─── System Init ──────────────────────────────────────────────────────────────
 static void SystemClock_Config(void);
@@ -98,6 +106,14 @@ int main(void)
     QueueManager_Init();
     ErrorHandler_Init();
     Diagnostics_Init();
+
+    xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
+
+    // Initialize IWDG directly via hardware registers for ~2.0s at 40kHz LSI
+    IWDG->KR = 0x5555; // Enable write access
+    IWDG->PR = 0x04;   // Prescaler 64
+    IWDG->RLR = 1249;  // Reload value
+    IWDG->KR = 0xCCCC; // Start IWDG
 
     // ── Spawn Task 1: ADC Sensor ─────────────────────────────────────────────
     hADCTask = xTaskCreateStatic(
@@ -187,6 +203,17 @@ int main(void)
         &xDiagTaskBuffer
     );
 
+    // ── Spawn Task 9: Watchdog ───────────────────────────────────────────────
+    hWatchdogTask = xTaskCreateStatic(
+        vTaskWatchdog,
+        "Watchdog",
+        STACK_SIZE_SYSTEM,
+        nullptr,
+        PRIORITY_WATCHDOG,
+        xWatchdogStack,
+        &xWatchdogTaskBuffer
+    );
+
     // Verify all tasks created (critical safety check)
     configASSERT(hADCTask      != nullptr);
     configASSERT(hDHT22Task    != nullptr);
@@ -196,6 +223,8 @@ int main(void)
     configASSERT(hOutputTask   != nullptr);
     configASSERT(hErrorTask    != nullptr);
     configASSERT(hDiagTask     != nullptr);
+    configASSERT(hWatchdogTask != nullptr);
+    configASSERT(xHealthGroupHandle != nullptr);
 
     // Hand control to FreeRTOS scheduler — never returns
     vTaskStartScheduler();

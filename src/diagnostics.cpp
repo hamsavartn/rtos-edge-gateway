@@ -35,7 +35,14 @@ void vTaskDiagnostics(void *pvParams)
 
     for (;;)
     {
-        vTaskDelay(pdMS_TO_TICKS(DIAG_INTERVAL_MS));
+        xEventGroupSetBits(xHealthGroupHandle, TASK_DIAG_BIT);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        static TickType_t last_diag = 0;
+        if (xTaskGetTickCount() - last_diag < pdMS_TO_TICKS(DIAG_INTERVAL_MS)) {
+            continue;
+        }
+        last_diag = xTaskGetTickCount();
 
         s_snapshot_count++;
         uint32_t uptime = xTaskGetTickCount();

@@ -55,6 +55,7 @@ void vTaskADCSensor(void *pvParams)
             ErrorHandler_Report(ERR_QUEUE_FULL, "ADC_Q");
         }
 
+        xEventGroupSetBits(xHealthGroupHandle, TASK_ADC_BIT);
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_ADC_MS));
     }
 }
@@ -100,6 +101,7 @@ void vTaskDHT22Sensor(void *pvParams)
             ErrorHandler_Report(ERR_QUEUE_FULL, "DHT22_Q");
         }
 
+        xEventGroupSetBits(xHealthGroupHandle, TASK_DHT22_BIT);
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_DHT22_MS));
     }
 }
@@ -123,6 +125,7 @@ void vTaskMPU6050Sensor(void *pvParams)
             pkt.error   = ERR_I2C_NACK;
             memset(&pkt.accel_x, 0, sizeof(int16_t) * 6);
             pkt.temperature_x10 = 0;
+            MPU6050_Recover();
         } else {
             pkt.accel_x         = raw.accel_x;
             pkt.accel_y         = raw.accel_y;
@@ -138,6 +141,7 @@ void vTaskMPU6050Sensor(void *pvParams)
             ErrorHandler_Report(ERR_QUEUE_FULL, "MPU_Q");
         }
 
+        xEventGroupSetBits(xHealthGroupHandle, TASK_MPU6050_BIT);
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_MPU6050_MS));
     }
 }
@@ -176,6 +180,7 @@ void vTaskUARTSensor(void *pvParams)
             ErrorHandler_Report(ERR_QUEUE_FULL, "UART_SENS_Q");
         }
 
+        xEventGroupSetBits(xHealthGroupHandle, TASK_UART_SENS_BIT);
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_UART_MS));
     }
 }
@@ -212,6 +217,42 @@ void vTaskOutputManager(void *pvParams)
 
             // Blink status LED on successful output
             HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+        }
+        xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TASK 9 — Watchdog (Highest Priority)
+// ═════════════════════════════════════════════════════════════════════════════
+void vTaskWatchdog(void *pvParams)
+{
+    (void)pvParams;
+    for (;;)
+    {
+        // Wait up to 1.5 seconds for all tasks to check in
+        EventBits_t uxBits = xEventGroupWaitBits(
+            xHealthGroupHandle,
+            ALL_TASKS_MASK,
+            pdTRUE, // Clear bits on exit
+            pdTRUE, // Wait for ALL bits
+            pdMS_TO_TICKS(1500)
+        );
+
+        if ((uxBits & ALL_TASKS_MASK) == ALL_TASKS_MASK) {
+            // All good, pet hardware watchdog
+            IWDG->KR = 0xAAAA;
+        } else {
+            // A task hung!
+            uint8_t hung_tasks = ALL_TASKS_MASK ^ (uxBits & ALL_TASKS_MASK);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "[FATAL] WATCHDOG TIMEOUT. Hung Mask: 0x%02X\r\n", hung_tasks);
+            UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
+            
+            ErrorHandler_Report(ERR_WATCHDOG_TIMEOUT, "WATCHDOG");
+            
+            // Spin infinitely — wait for hardware IWDG to physically reset MCU
+            while (1) {}
         }
     }
 }

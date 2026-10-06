@@ -113,3 +113,59 @@ HAL_StatusTypeDef MPU6050_ReadAll(MPU6050_RawData_t *out)
 
 // ─── Expose I2C handle (shared with LCD driver) ───────────────────────────────
 I2C_HandleTypeDef* MPU6050_GetI2CHandle(void) { return &hi2c1; }
+
+// ─── DWT µs Delay (72 MHz = 72 cycles/µs) ────────────────────────────────────
+static void delay_us(uint32_t us)
+{
+    if (!(CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk)) {
+        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+        DWT->CYCCNT = 0;
+        DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
+    }
+    uint32_t start = DWT->CYCCNT;
+    uint32_t ticks = us * (SystemCoreClock / 1000000UL);
+    while ((DWT->CYCCNT - start) < ticks) {}
+}
+
+void MPU6050_Recover(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // 1. De-initialize the I2C hardware to release AF control
+    HAL_I2C_DeInit(&hi2c1);
+
+    // 2. Configure SCL and SDA as standard Open-Drain outputs
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    // 3. Set both lines high initially
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    delay_us(10);
+
+    // 4. Bit-bang up to 9 clock pulses on SCL
+    for (int i = 0; i < 9; i++) {
+        // If SDA goes high, the bus is freed
+        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_SET) {
+            break;
+        }
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+        delay_us(5); // ~100kHz
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+        delay_us(5);
+    }
+
+    // 5. Generate a manual STOP condition
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+    delay_us(5);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+    delay_us(5);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    delay_us(5);
+
+    // 6. Re-initialize I2C
+    MPU6050_Init();
+}

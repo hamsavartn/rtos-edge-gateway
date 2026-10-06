@@ -4,6 +4,7 @@
 ![Platform](https://img.shields.io/badge/Platform-STM32F103C8T6-blue)
 ![RTOS](https://img.shields.io/badge/RTOS-FreeRTOS-green)
 ![Memory](https://img.shields.io/badge/Heap%20Usage-0%20Bytes-brightgreen)
+![Fault Tolerance](https://img.shields.io/badge/Fault%20Tolerance-IWDG%20%2B%20Recovery-purple)
 ![Simulator](https://img.shields.io/badge/Simulated-Wokwi-orange)
 ![Language](https://img.shields.io/badge/Language-C%2B%2B-red)
 
@@ -19,34 +20,51 @@ The system is built using **FreeRTOS** — a real-time operating system designed
 
 ## Why Does This Project Exist? (The Problem It Solves)
 
-In industrial embedded systems, sensors generate data continuously — temperature, vibration, pressure, serial frames — at rates ranging from 0.5 Hz to 100 Hz. A naive system might collect all this data in a single loop, storing readings in dynamically allocated buffers. This approach causes three critical failure modes in production:
+In industrial embedded systems, sensors generate data continuously — temperature, vibration, pressure, serial frames — at rates ranging from 0.5 Hz to 100 Hz. A naive system might collect all this data in a single loop, storing readings in dynamically allocated buffers. This approach causes critical failure modes in production:
 
 | Failure Mode | Cause | Consequence |
 |---|---|---|
 | **Heap Fragmentation Crash** | `malloc`/`new` called repeatedly over hours of runtime | System halts unpredictably, data lost |
 | **Data Race / Corruption** | Two tasks writing the same buffer simultaneously | Sensor readings corrupted silently |
 | **Priority Inversion** | Low-priority sensor task blocks high-priority output task | Real-time deadlines missed |
+| **Task Starvation / Deadlock** | A single thread freezes while others keep running | Traditional watchdogs miss it, system hangs partially |
+| **I2C Bus Lockup** | MCU resets mid-transmission, leaving peripheral in bad state | Peripheral holds SDA low permanently, killing the bus |
 
-This project eliminates all three failure modes by design:
+This project eliminates all these failure modes by design:
 
-- **Heap fragmentation** → impossible: zero heap allocation, all memory is static
-- **Data race** → impossible: each sensor has its own dedicated thread-safe queue
-- **Priority inversion** → resolved: FreeRTOS mutex-protected shared resources with proper priority assignment
+- **Heap fragmentation** → impossible: zero heap allocation, all memory is static.
+- **Data race** → impossible: each sensor has its own dedicated thread-safe queue.
+- **Priority inversion** → resolved: FreeRTOS mutex-protected shared resources with proper priority assignment.
+- **Task starvation** → impossible: Multi-task Watchdog using Event Groups and hardware IWDG.
+- **I2C Lockup** → resolved: Software bit-bang recovery sequence automatically resets locked peripherals.
+
+---
+
+## Advanced Fault Tolerance Features (Live Demo Showcase)
+
+This project implements two advanced industrial-grade reliability features that act as a safety net against hardware and software failures. 
+
+### 1. IWDG Task Health Monitoring (The "Deadlock Defender")
+In a complex system, it's possible for one thread to freeze while the others keep running. A traditional watchdog only checks if the main CPU loop is running. 
+* **The Solution:** An **Advanced Multi-Task Watchdog**. A dedicated, highest-priority Watchdog Task monitors a FreeRTOS Event Group. Every 1.5 seconds, it verifies that **all 8 background tasks** have checked in by setting their unique "health bit". If even a single task fails to report (indicating a freeze), the Watchdog refuses to pet the hardware Independent Watchdog (IWDG). The STM32 hardware then forcefully reboots the MCU within 2 seconds.
+* **Live Demo:** Insert an infinite loop (`while(1) {}`) inside any sensor task. The system will run for 1.5s, log exactly which task died (`[FATAL] WATCHDOG TIMEOUT. Hung Mask: 0xXX`), and safely reboot itself.
+
+### 2. I2C Bus Recovery (The "Hardware Healer")
+I2C is vulnerable to a specific hardware glitch: if the STM32 resets mid-communication, the sensor might be left waiting for a clock pulse, holding the data line (`SDA`) LOW. This permanently locks the bus.
+* **The Solution:** A **Software Bit-Bang Recovery**. If the STM32 detects a locked bus (NACK or timeout), it temporarily disconnects the hardware I2C controller. It takes manual control of the pins, bit-bangs up to 9 clock pulses on `SCL` to trick the sensor into finishing its transmission, generates a `STOP` condition, and reconnects hardware I2C.
+* **Live Demo:** Briefly short the MPU6050 `SDA` pin to `GND`. The serial monitor will show an `ERR_I2C_NACK`. The software will instantly execute the 9-clock recovery sequence and resume streaming live accelerometer data within milliseconds, preventing a permanent crash.
 
 ---
 
 ## How It Works — System Architecture
 
-The system is structured as **8 concurrent FreeRTOS tasks** communicating exclusively through **5 thread-safe static queues**. No task ever shares memory directly with another.
+The system is structured as **9 concurrent FreeRTOS tasks** communicating exclusively through **5 thread-safe static queues** and an **8-bit Event Group**.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    SENSOR LAYER (Priority 2)                │
-│                                                             │
+│                    SENSOR LAYER (Priority 1)                │
 │  [Task 1: ADC]      [Task 2: DHT22]   [Task 3: MPU6050]    │
 │  PA0 @ 20Hz         PB0 @ 0.5Hz       I2C1 @ 100Hz         │
-│  12-bit analog       1-Wire temp/       Accel + Gyro        │
-│  potentiometer       humidity           6-axis IMU          │
 │                                                             │
 │  [Task 4: UART Sensor]                                      │
 │  USART2 @ 10Hz — framed serial protocol (0xAA+LEN+CHK)     │
@@ -54,44 +72,38 @@ The system is structured as **8 concurrent FreeRTOS tasks** communicating exclus
        │               │               │          │
    [Q:ADC]        [Q:DHT22]      [Q:MPU6050]  [Q:UART]
   StaticQueue    StaticQueue     StaticQueue  StaticQueue
-  depth=16        depth=8         depth=16     depth=8
        │               │               │          │
        └───────────────┴───────────────┴──────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
-│               ROUTING LAYER (Priority 3)                    │
-│                                                             │
+│               ROUTING LAYER (Priority 2)                    │
 │  [Task 5: Queue Manager]                                    │
 │  Round-robin drain of all 4 sensor queues                   │
 │  Formats data into OutputPacket_t (LCD-ready strings)       │
-│  Error packets discarded + reported to ErrorHandler         │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                           [Q:Output]
-                         StaticQueue
-                          depth=32
-                               │
 ┌──────────────────────────────▼──────────────────────────────┐
-│               OUTPUT LAYER (Priority 3)                     │
-│                                                             │
+│               OUTPUT LAYER (Priority 2)                     │
 │  [Task 6: Output Manager]                                   │
 │  USART1 (115200) → Serial terminal log with timestamp       │
 │  I2C LCD (0x27)  → Live 16×2 display of latest reading     │
-│  Status LED (PC13) toggles on every successful output       │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│               SYSTEM LAYER (Priority 4 — Highest)          │
-│                                                             │
+│               SYSTEM LAYER (Priority 3)                    │
 │  [Task 7: Error Handler]                                    │
-│  Static ring buffer (32 entries) logs all fault codes      │
-│  Checks stack high-watermarks every 5 seconds              │
-│  Fatal faults halt system + rapid LED blink                 │
+│  Logs fault codes & checks stack high-watermarks            │
 │                                                             │
 │  [Task 8: Diagnostics]                                      │
-│  Every 10 seconds prints full system snapshot:             │
-│  queue depths, packets routed, stack watermarks,            │
-│  error count, heap usage (must always read 0 bytes)        │
+│  Every 10s prints full system snapshot & validates 0 heap   │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│          FAULT TOLERANCE & HEALTH (Priority 4)             │
+│  [Task 9: Watchdog]                                         │
+│  Monitors Event Group. All 8 lower tasks must check in      │
+│  every 1.5s, otherwise Watchdog triggers hardware MCU reset.│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -106,28 +118,13 @@ Every FreeRTOS object in this project uses its static variant:
 | Task creation | `xTaskCreate()` → heap | `xTaskCreateStatic()` → `.bss` |
 | Queue creation | `xQueueCreate()` → heap | `xQueueCreateStatic()` → `.bss` |
 | Mutex creation | `xSemaphoreCreateMutex()` → heap | `xSemaphoreCreateMutexStatic()` → `.bss` |
-| Idle task stack | allocated at startup | `vApplicationGetIdleTaskMemory()` hook |
-| Timer task stack | allocated at startup | `vApplicationGetTimerTaskMemory()` hook |
+| Event Groups | `xEventGroupCreate()` → heap | `xEventGroupCreateStatic()` → `.bss` |
 
 `FreeRTOSConfig.h` enforces this at the compiler level:
 ```c
 #define configSUPPORT_DYNAMIC_ALLOCATION   0   // disabled entirely
 #define configTOTAL_HEAP_SIZE              0U  // zero bytes allocated
-#define configUSE_MALLOC_FAILED_HOOK       1   // catches violations
 ```
-
-If any code anywhere accidentally calls `malloc` or `new`, the `vApplicationMallocFailedHook` fires immediately, logs the violation, and halts safely.
-
----
-
-## Queue Design — O(1) Deterministic Latency
-
-Each queue is a fixed-size ring buffer of fixed-size structs. Because:
-- **No linked lists** — no pointer chasing
-- **Fixed item size** — compiler-known offset arithmetic
-- **Static storage** — no allocation overhead
-
-Both `xQueueSend()` and `xQueueReceive()` execute in **O(1) constant time** regardless of queue depth or system load. This is critical for the MPU6050 task sampling at 100 Hz — it cannot afford variable-latency memory operations.
 
 ---
 
@@ -147,33 +144,15 @@ Both `xQueueSend()` and `xQueueReceive()` execute in **O(1) constant time** rega
 
 ---
 
-## Performance Metrics
-
-| Metric | Value |
-|---|---|
-| System Clock | 72 MHz (HSE × PLL ×9) |
-| RTOS Tick Resolution | 1 ms |
-| Queue Latency | O(1) deterministic |
-| Heap Memory Used | **0 bytes** |
-| Runtime Heap Allocations | **0** |
-| Stack Overflow Detection | FreeRTOS Pattern Check (mode 2) |
-| ADC Sample Rate | 20 Hz |
-| MPU6050 Sample Rate | 100 Hz |
-| DHT22 Sample Rate | 0.5 Hz |
-| UART Sensor Poll Rate | 10 Hz |
-| Diagnostic Snapshot Interval | 10 seconds |
-
----
-
 ## UART Serial Output Format
 
 Every packet routed produces a timestamped log line on USART1 (115200 baud):
 
-```
+```text
 ╔══════════════════════════════════════════╗
 ║  RTOS Industrial Edge Gateway v1.0       ║
 ║  STM32F103C8 @ 72 MHz | FreeRTOS Static  ║
-║  8 Tasks | 5 Queues | 0 Bytes Heap       ║
+║  9 Tasks | 5 Queues | 0 Bytes Heap       ║
 ╚══════════════════════════════════════════╝
 
 [    1250] SRC=0x01 | ADC:1647mV       | Raw: 2043
@@ -195,59 +174,31 @@ Every packet routed produces a timestamped log line on USART1 (115200 baud):
 
 ---
 
-## Simulation — Wokwi Digital Twin
-
-The complete system is simulated on **Wokwi** — no physical hardware required. The simulation includes:
-
-- STM32F103 running at full 72 MHz with accurate peripheral timing
-- DHT22 with configurable temperature/humidity values
-- MPU6050 with I2C communication
-- Potentiometer mapped to ADC PA0
-- 16×2 LCD with I2C backpack
-- UART terminal for serial log output
-
-Open `wokwi/diagram.json` in the Wokwi VS Code extension or at [wokwi.com](https://wokwi.com).
-
----
-
 ## Project Structure
 
-```
+```text
 rtos-edge-gateway/
 │
 ├── src/
-│   ├── main.cpp               ← System init, task spawn, FreeRTOS hooks
-│   ├── freertos_tasks.cpp     ← Tasks 1–4 (sensors) + Task 6 (output)
+│   ├── main.cpp               ← System init, task spawn, IWDG init
+│   ├── freertos_tasks.cpp     ← Tasks 1–4 (sensors), Task 6 (output), Task 9 (Watchdog)
 │   ├── queue_manager.cpp      ← Task 5 + all 5 static queues
 │   ├── error_handler.cpp      ← Task 7 + error ring buffer
 │   ├── diagnostics.cpp        ← Task 8 + system health snapshot
 │   ├── adc_driver.cpp         ← ADC1 low-level driver (PA0)
 │   ├── dht22_driver.cpp       ← DHT22 bit-bang 1-wire + DWT timing
-│   ├── mpu6050_driver.cpp     ← MPU6050 I2C register driver
+│   ├── mpu6050_driver.cpp     ← MPU6050 I2C driver + 9-clock bus recovery
 │   ├── uart_driver.cpp        ← USART1 log output (thread-safe)
 │   ├── uart_sensor_driver.cpp ← USART2 framed sensor input
-│   └── lcd_driver.cpp         ← I2C LCD PCF8574 4-bit driver
+│   └── lcd_driver.cpp         ← I2C LCD PCF8574 driver
 │
 ├── include/
-│   ├── main.h                 ← All structs, error codes, config constants
+│   ├── main.h                 ← Structs, error codes, event bitmasks
 │   ├── FreeRTOSConfig.h       ← RTOS tuning (static-only, stack checks)
-│   ├── freertos_tasks.h
-│   ├── queue_manager.h
-│   ├── error_handler.h
-│   ├── diagnostics.h
-│   ├── adc_driver.h
-│   ├── dht22_driver.h
-│   ├── mpu6050_driver.h
-│   ├── uart_driver.h
-│   ├── uart_sensor_driver.h
-│   └── lcd_driver.h
+│   └── (driver headers...)
 │
-├── wokwi/
-│   ├── diagram.json           ← Full circuit schematic
-│   └── wokwi.toml             ← Simulator build target
-│
+├── wokwi/                     ← Wokwi simulation files
 ├── platformio.ini             ← Build system config
-├── .gitignore
 └── README.md
 ```
 
@@ -255,15 +206,13 @@ rtos-edge-gateway/
 
 ## Skills Demonstrated
 
-- **Bare-metal C++ embedded programming** on ARM Cortex-M3
-- **FreeRTOS** — static task/queue/semaphore architecture
-- **Low-level peripheral drivers** — ADC, I2C, USART, GPIO, DWT timer
-- **Bit-bang protocol implementation** — DHT22 1-wire with cycle-accurate timing
-- **I2C multi-device bus** — MPU6050 and LCD on shared bus
-- **Thread-safe concurrent design** — producer/consumer queuing with no shared state
-- **Deterministic real-time system design** — O(1) queuing, predictable latency
-- **Fault-tolerant embedded architecture** — error logging, stack monitoring, zero-heap enforcement
-- **Digital twin simulation** — full hardware validation on Wokwi without physical components
+- **Bare-metal C++ embedded programming** on ARM Cortex-M3.
+- **Fault-Tolerant Architectures** — IWDG hardware watchdogs, Event Groups for deadlock prevention, and I2C bit-bang bus recovery.
+- **FreeRTOS** — fully static task/queue/semaphore/event group architecture.
+- **Low-level peripheral drivers** — direct hardware register manipulation alongside STM32 HAL.
+- **Thread-safe concurrent design** — producer/consumer queuing with no shared state or mutex contention.
+- **Deterministic real-time system design** — O(1) queuing, predictable latency, priority assignment.
+- **Zero-heap enforcement** — eliminating memory fragmentation at compile time.
 
 ---
 
