@@ -61,28 +61,28 @@
     }
   ],
   "connections": [
-    ["mcu:PB7",  "mpu1:SDA",  "blue",  []],
-    ["mcu:PB6",  "mpu1:SCL",  "yellow", []],
-    ["mpu1:VCC", "mcu:3V3",  "red",   []],
+    ["mcu:B7",  "mpu1:SDA",  "blue",  []],
+    ["mcu:B6",  "mpu1:SCL",  "yellow", []],
+    ["mpu1:VCC", "mcu:3.3",  "red",   []],
     ["mpu1:GND", "mcu:GND",   "black", []],
     ["mpu1:AD0", "mcu:GND",   "black", []],
 
-    ["mcu:PB7",  "lcd1:SDA",  "blue",  []],
-    ["mcu:PB6",  "lcd1:SCL",  "yellow", []],
+    ["mcu:B7",  "lcd1:SDA",  "blue",  []],
+    ["mcu:B6",  "lcd1:SCL",  "yellow", []],
     ["lcd1:VCC", "mcu:5V",    "red",   []],
     ["lcd1:GND", "mcu:GND",   "black", []],
 
-    ["mcu:PB0",  "dht1:SDA",  "green", []],
+    ["mcu:B0",  "dht1:SDA",  "green", []],
     ["dht1:SDA", "r1:1",      "green", []],
-    ["r1:2",     "mcu:3V3",  "red", []],
-    ["dht1:VCC", "mcu:3V3",  "red",   []],
+    ["r1:2",     "mcu:3.3",  "red", []],
+    ["dht1:VCC", "mcu:3.3",  "red",   []],
     ["dht1:GND", "mcu:GND",   "black", []],
 
-    ["pot1:SIG", "mcu:PA0",   "orange", []],
-    ["pot1:VCC", "mcu:3V3",  "red",   []],
+    ["pot1:SIG", "mcu:A0",   "orange", []],
+    ["pot1:VCC", "mcu:3.3",  "red",   []],
     ["pot1:GND", "mcu:GND",   "black", []],
 
-    ["mcu:PC13", "r2:1",      "purple", []],
+    ["mcu:C13", "r2:1",      "purple", []],
     ["r2:2",     "led1:A",    "purple", []],
     ["led1:K",   "mcu:GND",   "black", []]
   ]
