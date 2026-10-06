@@ -72,8 +72,9 @@
     ["lcd1:VCC", "mcu:5V",    "red",   []],
     ["lcd1:GND", "mcu:GND",   "black", []],
 
-    ["mcu:PB0",  "r1:1",      "green", []],
-    ["r1:2",     "dht1:SDA",  "green", []],
+    ["mcu:PB0",  "dht1:SDA",  "green", []],
+    ["dht1:SDA", "r1:1",      "green", []],
+    ["r1:2",     "mcu:3.3V",  "red", []],
     ["dht1:VCC", "mcu:3.3V",  "red",   []],
     ["dht1:GND", "mcu:GND",   "black", []],
 

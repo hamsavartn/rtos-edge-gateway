@@ -194,6 +194,13 @@ void vTaskOutputManager(void *pvParams)
     OutputPacket_t pkt;
     char           uart_buf[64];
 
+    // Initial boot message to verify LCD is working
+    LCD_Clear();
+    LCD_SetCursor(0, 0);
+    LCD_Print("Gateway Booting");
+    LCD_SetCursor(1, 0);
+    LCD_Print("Waiting for data");
+
     for (;;)
     {
         // Block on output queue — up to 100 ms wait
@@ -208,12 +215,16 @@ void vTaskOutputManager(void *pvParams)
                      (char*)pkt.line2);
             UART_Driver_Transmit((uint8_t*)uart_buf, strlen(uart_buf));
 
-            // ── LCD Update ──────────────────────────────────────────────────
-            LCD_Clear();
-            LCD_SetCursor(0, 0);
-            LCD_Print((char*)pkt.line1);
-            LCD_SetCursor(1, 0);
-            LCD_Print((char*)pkt.line2);
+            // ── LCD Update (throttled to 2 Hz to prevent flickering) ────────
+            static uint32_t last_lcd_update = 0;
+            if (pkt.timestamp_ms - last_lcd_update > 500) {
+                last_lcd_update = pkt.timestamp_ms;
+                LCD_Clear();
+                LCD_SetCursor(0, 0);
+                LCD_Print((char*)pkt.line1);
+                LCD_SetCursor(1, 0);
+                LCD_Print((char*)pkt.line2);
+            }
 
             // Blink status LED on successful output
             HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
