@@ -152,6 +152,7 @@ void vTaskErrorHandler(void *pvParams)
                 ErrorHandler_Report(ERR_STACK_OVERFLOW, tasks[i].name);
             }
         }
+        } // End of 5-second stack check
 
         xEventGroupSetBits(xHealthGroupHandle, TASK_ERROR_HND_BIT);
         vTaskDelay(pdMS_TO_TICKS(500));
