@@ -4,7 +4,7 @@
   "editor": "wokwi",
   "parts": [
     {
-      "type": "wokwi-st-nucleo-f103rb",
+      "type": "board-stm32-blue-pill",
       "id": "mcu",
       "top": 0,
       "left": 0,
@@ -63,7 +63,7 @@
   "connections": [
     ["mcu:PB7",  "mpu1:SDA",  "blue",  []],
     ["mcu:PB6",  "mpu1:SCL",  "yellow", []],
-    ["mpu1:VCC", "mcu:3.3V",  "red",   []],
+    ["mpu1:VCC", "mcu:3V3",  "red",   []],
     ["mpu1:GND", "mcu:GND",   "black", []],
     ["mpu1:AD0", "mcu:GND",   "black", []],
 
@@ -74,12 +74,12 @@
 
     ["mcu:PB0",  "dht1:SDA",  "green", []],
     ["dht1:SDA", "r1:1",      "green", []],
-    ["r1:2",     "mcu:3.3V",  "red", []],
-    ["dht1:VCC", "mcu:3.3V",  "red",   []],
+    ["r1:2",     "mcu:3V3",  "red", []],
+    ["dht1:VCC", "mcu:3V3",  "red",   []],
     ["dht1:GND", "mcu:GND",   "black", []],
 
     ["pot1:SIG", "mcu:PA0",   "orange", []],
-    ["pot1:VCC", "mcu:3.3V",  "red",   []],
+    ["pot1:VCC", "mcu:3V3",  "red",   []],
     ["pot1:GND", "mcu:GND",   "black", []],
 
     ["mcu:PC13", "r2:1",      "purple", []],
