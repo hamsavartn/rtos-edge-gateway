@@ -20,5 +20,6 @@ if os.path.isdir(base):
     heap_path = os.path.join(base, "MemMang")
     if os.path.isdir(heap_path):
         for item in os.listdir(heap_path):
-            if item != "heap_4.c":
-                os.remove(os.path.join(heap_path, item))
+            file_path = os.path.join(heap_path, item)
+            if os.path.isfile(file_path):
+                os.remove(file_path)

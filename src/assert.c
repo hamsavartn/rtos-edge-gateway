@@ -1,4 +1,6 @@
-void vAssertCalled(const char *file, unsigned long line)
+#include <stdint.h>
+
+void vAssertCalled(const char *file, uint32_t line)
 {
     (void)file;
     (void)line;

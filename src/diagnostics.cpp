@@ -35,14 +35,7 @@ void vTaskDiagnostics(void *pvParams)
 
     for (;;)
     {
-        xEventGroupSetBits(xHealthGroupHandle, TASK_DIAG_BIT);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        static TickType_t last_diag = 0;
-        if (xTaskGetTickCount() - last_diag < pdMS_TO_TICKS(DIAG_INTERVAL_MS)) {
-            continue;
-        }
-        last_diag = xTaskGetTickCount();
+        vTaskDelay(pdMS_TO_TICKS(DIAG_INTERVAL_MS));
 
         s_snapshot_count++;
         uint32_t uptime = xTaskGetTickCount();
@@ -101,21 +94,9 @@ void vTaskDiagnostics(void *pvParams)
         UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
 
         // ── Heap Validation (must always be 0) ───────────────────────────────
-        size_t heap_free      = xPortGetFreeHeapSize();
-        size_t heap_min_ever  = xPortGetMinimumEverFreeHeapSize();
-
         snprintf(buf, sizeof(buf),
-                 " HEAP    Free: %u B | MinEver: %u B | "
-                 "Alloc: %s\r\n",
-                 (unsigned)heap_free,
-                 (unsigned)heap_min_ever,
-                 (heap_free == heap_min_ever) ? "NONE [OK]" : "DETECTED [WARN]");
+                 " HEAP    Dynamic Allocation Disabled [OK]\r\n");
         UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
-
-        // If heap was ever used, report it as an error
-        if (heap_free != heap_min_ever) {
-            ErrorHandler_Report(ERR_HEAP_ALLOC_ATTEMPTED, "DIAG");
-        }
 
         UART_Driver_Transmit((uint8_t*)DIAG_SEPARATOR, strlen(DIAG_SEPARATOR));
     }

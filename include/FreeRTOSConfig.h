@@ -1,5 +1,5 @@
 /*
- * FreeRTOSConfig.h — Tuned for STM32F103C8T6 @ 72 MHz
+ * FreeRTOSConfig.h — Tuned for STM32F103C8T6 @ 64 MHz
  * ======================================================
  * Key design decisions:
  *   - configSUPPORT_STATIC_ALLOCATION  = 1  (static only)
@@ -98,7 +98,8 @@ extern void vAssertCalled(const char *file, uint32_t line);
 #define xPortPendSVHandler PendSV_Handler
 // SysTick_Handler is implemented manually in main.cpp to also call HAL_IncTick
 
+#define configUSE_16_BIT_TICKS 0
+
 #ifdef __cplusplus
 }
 #endif
-#define configUSE_16_BIT_TICKS 0
