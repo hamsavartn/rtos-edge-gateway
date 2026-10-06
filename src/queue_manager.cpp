@@ -106,8 +106,6 @@ void vTaskQueueManager(void *pvParams)
     UARTSensorPacket_t uartPkt;
     OutputPacket_t     outPkt;
 
-    char buf[34];
-
     for (;;)
     {
         // ── Route ADC packets ────────────────────────────────────────────────
@@ -119,8 +117,8 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = adcPkt.timestamp_ms;
             outPkt.source_id    = 0x01;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "ADC:%4umV      ", adcPkt.voltage_mv);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "Raw: %4u        ", adcPkt.raw_value);
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "ADC:%umV", adcPkt.voltage_mv);
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "Raw:%u", adcPkt.raw_value);
             xQueueSend(hOutputQueue, &outPkt, 0);
             s_total_routed++;
         }
@@ -134,9 +132,9 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = dhtPkt.timestamp_ms;
             outPkt.source_id    = 0x02;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "T:%3d.%dC        ",
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "T:%d.%dC",
                      dhtPkt.temperature_x10 / 10, dhtPkt.temperature_x10 % 10);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "H:%3d.%d%%RH     ",
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "H:%d.%d%%RH",
                      dhtPkt.humidity_x10 / 10, dhtPkt.humidity_x10 % 10);
             xQueueSend(hOutputQueue, &outPkt, 0);
             s_total_routed++;
@@ -151,9 +149,9 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = mpuPkt.timestamp_ms;
             outPkt.source_id    = 0x03;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "AX:%5d AY:%5d",
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "AX:%d AY:%d",
                      mpuPkt.accel_x, mpuPkt.accel_y);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "GX:%5d GY:%5d",
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "GX:%d GY:%d",
                      mpuPkt.gyro_x, mpuPkt.gyro_y);
             xQueueSend(hOutputQueue, &outPkt, 0);
             s_total_routed++;
@@ -168,11 +166,11 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = uartPkt.timestamp_ms;
             outPkt.source_id    = 0x04;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "UART[%2uB]       ", uartPkt.length);
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "UART[%uB]", uartPkt.length);
             memset(outPkt.line2, ' ', LCD_COLS);
             uint8_t copy_len = (uartPkt.length < LCD_COLS) ? uartPkt.length : LCD_COLS;
             memcpy(outPkt.line2, uartPkt.payload, copy_len);
-            outPkt.line2[LCD_COLS] = '\0';
+            outPkt.line2[copy_len] = '\0';
             xQueueSend(hOutputQueue, &outPkt, 0);
             s_total_routed++;
         }

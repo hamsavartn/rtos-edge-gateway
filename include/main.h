@@ -25,7 +25,7 @@
 #define TICK_RATE_HZ         1000U       // 1 ms tick
 
 // ─── Task Stack Sizes (words) ─────────────────────────────────────────────────
-#define STACK_SIZE_SENSOR    256U
+#define STACK_SIZE_SENSOR    192U
 #define STACK_SIZE_MANAGER   384U
 #define STACK_SIZE_SYSTEM    256U
 
@@ -52,7 +52,7 @@
 #define QUEUE_DEPTH_DHT22    8U
 #define QUEUE_DEPTH_MPU6050  16U
 #define QUEUE_DEPTH_UART     8U
-#define QUEUE_DEPTH_OUTPUT   32U
+#define QUEUE_DEPTH_OUTPUT   16U
 
 // ─── Sensor Sampling Periods (ms) ────────────────────────────────────────────
 #define SAMPLE_PERIOD_ADC_MS       50U    // 20 Hz
