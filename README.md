@@ -12,7 +12,7 @@
 
 ## What Is This Project?
 
-This is a **real-time industrial telemetry manager** running on a bare-metal ARM Cortex-M3 microcontroller. It continuously collects data from four different types of industrial sensors, processes it through a deterministic queuing pipeline, and outputs live readings to both a serial terminal and a 16×2 LCD display — all simultaneously, without ever crashing or losing data.
+This is a **real-time industrial telemetry manager** running on a bare-metal ARM Cortex-M3 microcontroller (STM32F103C8T6 @ 64 MHz). It continuously collects data from four different types of industrial sensors, processes it through a deterministic queuing pipeline, and outputs live readings to both a serial terminal and a 16×2 LCD display — all simultaneously, without ever crashing or losing data.
 
 The system is built using **FreeRTOS** — a real-time operating system designed for embedded systems — with one strict rule enforced throughout the entire codebase: **absolutely no dynamic memory allocation**. No `malloc`, no `new`, no heap. Every byte of memory the system uses is allocated at compile time and lives in static storage.
 
@@ -46,8 +46,9 @@ This project implements two advanced industrial-grade reliability features that 
 
 ### 1. IWDG Task Health Monitoring (The "Deadlock Defender")
 In a complex system, it's possible for one thread to freeze while the others keep running. A traditional watchdog only checks if the main CPU loop is running. 
-* **The Solution:** An **Advanced Multi-Task Watchdog**. A dedicated, highest-priority Watchdog Task monitors a FreeRTOS Event Group. Every 1.5 seconds, it verifies that **all 8 background tasks** have checked in by setting their unique "health bit". If even a single task fails to report (indicating a freeze), the Watchdog refuses to pet the hardware Independent Watchdog (IWDG). The STM32 hardware then forcefully reboots the MCU within 2 seconds.
-* **Live Demo:** Insert an infinite loop (`while(1) {}`) inside any sensor task. The system will run for 1.5s, log exactly which task died (`[FATAL] WATCHDOG TIMEOUT. Hung Mask: 0xXX`), and safely reboot itself.
+* **The Solution:** An **Advanced Multi-Task Watchdog**. A dedicated, highest-priority Watchdog Task monitors a FreeRTOS Event Group. Every 3 seconds, it verifies that **all 8 background tasks** have checked in by setting their unique "health bit". If even a single task fails to report (indicating a freeze), the Watchdog refuses to pet the hardware Independent Watchdog (IWDG). The STM32 hardware then forcefully reboots the MCU.
+* **Enabling the hardware IWDG:** the IWDG is compiled in only when the `ENABLE_IWDG` build flag is set (4 s timeout — must be longer than the 3 s health window, which in turn must be longer than the DHT22's 2 s sampling period). Uncomment `-DENABLE_IWDG` in `platformio.ini` for real hardware. It is off by default because the Wokwi simulator does not emulate IWDG resets.
+* **Live Demo:** Insert an infinite loop (`while(1) {}`) inside any sensor task. The system will run for up to 3s, log exactly which task died (`[FATAL] WATCHDOG TIMEOUT. Hung Mask: 0xXX`), blink the status LED, and (with IWDG enabled) reboot itself.
 
 ### 2. I2C Bus Recovery (The "Hardware Healer")
 I2C is vulnerable to a specific hardware glitch: if the STM32 resets mid-communication, the sensor might be left waiting for a clock pulse, holding the data line (`SDA`) LOW. This permanently locks the bus.
@@ -142,6 +143,29 @@ Every FreeRTOS object in this project uses its static variant:
 | USART2 RX | PA3 | UART sensor TX |
 | Status LED | PC13 | Onboard LED (active low) |
 
+> **Note:** the LCD backpack is powered from 5 V (it needs the voltage for good contrast) while the MCU is at 3.3 V. This works in the simulator and is common in practice, but on real hardware an I2C level shifter is the strictly correct wiring.
+
+---
+
+## Building & Simulation
+
+| Tool | Version |
+|---|---|
+| PlatformIO Core | 6.x |
+| Platform | `ststm32` 20.x |
+| Framework | STM32Cube F1 (1.8.x) |
+| RTOS | [FreeRTOS-Kernel V11.3.1](https://github.com/FreeRTOS/FreeRTOS-Kernel) (pinned in `platformio.ini`) |
+| Simulator | Wokwi (`wokwi.toml` + `diagram.json`, VS Code extension or CLI) |
+
+```bash
+pio run                # build firmware (.pio/build/bluepill_f103c8/firmware.bin)
+pio device monitor     # 115200 baud serial log
+```
+
+In VS Code, use the Wokwi extension (**Wokwi: Start Simulation**) — it picks up `wokwi.toml` and `diagram.json` automatically. The UART sensor input (USART2) has no feeder wired in the default diagram; to demo it, connect any serial sender to PA3 at 9600 baud and send frames in the `[0xAA][LEN][DATA...][XOR checksum]` format.
+
+For real hardware, uncomment `-DENABLE_IWDG` in `platformio.ini` to arm the 4 s hardware watchdog.
+
 ---
 
 ## UART Serial Output Format
@@ -151,7 +175,7 @@ Every packet routed produces a timestamped log line on USART1 (115200 baud):
 ```text
 ╔══════════════════════════════════════════╗
 ║  RTOS Industrial Edge Gateway v1.0       ║
-║  STM32F103C8 @ 72 MHz | FreeRTOS Static  ║
+║  STM32F103C8 @ 64 MHz | FreeRTOS Static  ║
 ║  9 Tasks | 5 Queues | 0 Bytes Heap       ║
 ╚══════════════════════════════════════════╝
 
@@ -162,7 +186,7 @@ Every packet routed produces a timestamped log line on USART1 (115200 baud):
 ════════════════════════════════════════
  DIAG SNAPSHOT #1 | Uptime: 10.000 s
 ════════════════════════════════════════
- QUEUES  ADC: 0/16  DHT22:0/8  MPU: 0/16  UART:0/8  OUT: 0/32
+ QUEUES  ADC: 0/16  DHT22:0/8  MPU: 0/16  UART:0/8  OUT: 0/16
  ROUTED  Total: 342 packets
  ERRORS  Total: 0
  STACKS (min free words):
@@ -197,7 +221,10 @@ rtos-edge-gateway/
 │   ├── FreeRTOSConfig.h       ← RTOS tuning (static-only, stack checks)
 │   └── (driver headers...)
 │
-├── wokwi/                     ← Wokwi simulation files
+├── scripts/
+│   └── prune_freertos.py      ← Pre-build script: trims unused FreeRTOS ports
+├── diagram.json               ← Wokwi wiring (board, sensors, LCD, LED)
+├── wokwi.toml                 ← Wokwi simulator config (firmware paths)
 ├── platformio.ini             ← Build system config
 └── README.md
 ```

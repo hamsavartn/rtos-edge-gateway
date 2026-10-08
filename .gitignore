@@ -23,3 +23,8 @@ Thumbs.db
 
 # Wokwi local cache
 .wokwi/
+
+# Stray local clones / agent worktrees (not part of the project)
+rtos-edge-gateway/
+.kilo/
+.qodo/

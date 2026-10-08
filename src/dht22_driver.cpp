@@ -15,18 +15,39 @@
 #include "dht22_driver.h"
 #include <string.h>
 
-// ─── DWT µs Delay (72 MHz = 72 cycles/µs) ────────────────────────────────────
+// ─── µs Delay: DWT cycle counter with busy-loop fallback ─────────────────────
+// If the DWT cycle counter doesn't run (some simulators / debug configs),
+// waiting on CYCCNT would spin forever inside the read critical section and
+// freeze the whole RTOS — so verify it advances once, and fall back to a
+// calibrated busy loop if it doesn't.
+static int s_dwt_ok = -1;   // -1 = untested
+
+static void dwt_enable(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
 static void delay_us(uint32_t us)
 {
-    // Enable DWT if not already
-    if (!(CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk)) {
-        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    if (s_dwt_ok < 0) {
+        dwt_enable();
         DWT->CYCCNT = 0;
-        DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
+        uint32_t start = DWT->CYCCNT;
+        for (volatile uint32_t i = 0; i < 1000; i++) { __NOP(); }
+        s_dwt_ok = (DWT->CYCCNT != start) ? 1 : 0;
     }
-    uint32_t start = DWT->CYCCNT;
-    uint32_t ticks = us * (SystemCoreClock / 1000000UL);
-    while ((DWT->CYCCNT - start) < ticks) {}
+
+    if (s_dwt_ok) {
+        uint32_t start = DWT->CYCCNT;
+        uint32_t ticks = us * (SystemCoreClock / 1000000UL);
+        while ((DWT->CYCCNT - start) < ticks) {}
+    } else {
+        // ~7 cycles per iteration (decrement + branch + NOP on M3): calibrate
+        // from SystemCoreClock. Precision is sufficient for DHT22 thresholds.
+        uint32_t loops = us * (SystemCoreClock / 7000000UL);
+        while (loops--) { __NOP(); }
+    }
 }
 
 // ─── GPIO helpers ─────────────────────────────────────────────────────────────

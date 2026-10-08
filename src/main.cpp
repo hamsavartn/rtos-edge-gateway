@@ -7,15 +7,16 @@
  * RTOS       : FreeRTOS (static allocation only)
  * Simulator  : Wokwi (Digital Twin)
  *
- * Architecture: 5-Task FreeRTOS System
+ * Architecture: 9-Task FreeRTOS System
  *   Task 1 — SensorADC     : Reads analog ADC sensor (PA0)
  *   Task 2 — SensorDHT22   : Reads DHT22 temp/humidity (PB0)
  *   Task 3 — SensorMPU6050 : Reads MPU6050 via I2C (PB6/PB7)
- *   Task 4 — UARTSensor    : Reads UART-based sensor (PA9/PA10)
+ *   Task 4 — UARTSensor    : Reads UART-based sensor (PA2/PA3)
  *   Task 5 — QueueManager  : Aggregates all sensor queues
  *   Task 6 — OutputManager : UART log + I2C LCD display
  *   Task 7 — ErrorHandler  : Monitors faults, stack overflows
  *   Task 8 — Diagnostics   : System health, uptime, CPU stats
+ *   Task 9 — Watchdog      : Health monitor, IWDG feeder
  *
  * Memory Policy: ZERO dynamic allocation — all tasks, queues,
  * and buffers use static memory (StaticTask_t / StaticQueue_t).
@@ -109,13 +110,17 @@ int main(void)
 
     xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
 
-    // Disable IWDG in simulation to isolate instant-reset issues
-    /*
+#ifdef ENABLE_IWDG
+    // Hardware Independent Watchdog: LSI 40 kHz / 64 = 625 Hz, reload 2499 → 4.0 s.
+    // Period must exceed WATCHDOG_WINDOW_MS (3 s) so the Watchdog task can check
+    // in. Enabled via build flag for real hardware; off by default for Wokwi.
+    RCC->CSR |= RCC_CSR_LSION;
+    while ((RCC->CSR & RCC_CSR_LSIRDY) == 0U) {}
     IWDG->KR = 0x5555; // Enable write access
     IWDG->PR = 0x04;   // Prescaler 64
-    IWDG->RLR = 1249;  // Reload value
+    IWDG->RLR = 2499;  // Reload value → 4.0 s
     IWDG->KR = 0xCCCC; // Start IWDG
-    */
+#endif
 
     // ── Spawn Task 1: ADC Sensor ─────────────────────────────────────────────
     hADCTask = xTaskCreateStatic(
@@ -236,7 +241,7 @@ int main(void)
     while (1) {}
 }
 
-// ─── Clock Configuration: 72 MHz via PLL ──────────────────────────────────────
+// ─── Clock Configuration: 64 MHz via PLL (HSI/2 × 16) ─────────────────────────
 static void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef RCC_OscInit = {};
@@ -257,6 +262,13 @@ static void SystemClock_Config(void)
     RCC_ClkInit.APB1CLKDivider = RCC_HCLK_DIV2; // APB1 max 36 MHz
     RCC_ClkInit.APB2CLKDivider = RCC_HCLK_DIV1;
     HAL_RCC_ClockConfig(&RCC_ClkInit, FLASH_LATENCY_2);
+
+    // ADC clock: PCLK2/6 = 10.67 MHz — must stay ≤ 14 MHz per the F1 datasheet.
+    // The reset default (PCLK2/2 = 32 MHz) is out of spec and corrupts accuracy.
+    RCC_PeriphCLKInitTypeDef PeriphClkInit = {};
+    PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+    PeriphClkInit.AdcClockSelection    = RCC_ADCPCLK2_DIV6;
+    HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit);
 }
 
 // ─── GPIO Init ────────────────────────────────────────────────────────────────
@@ -279,6 +291,10 @@ static void GPIO_Init(void)
     gpio.Mode  = GPIO_MODE_OUTPUT_OD;
     gpio.Pull  = GPIO_PULLUP;
     HAL_GPIO_Init(GPIOB, &gpio);
+
+    // Release the DHT22 bus (idle-high) — the ODR defaults to LOW, which would
+    // hold a spurious start condition on the line until the sensor task runs.
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 }
 
 // ─── Peripherals Init ─────────────────────────────────────────────────────────
@@ -302,16 +318,7 @@ extern "C" void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffe
     *pulIdleTaskStackSize   = configMINIMAL_STACK_SIZE;
 }
 
-extern "C" void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
-                                    StackType_t  **ppxTimerTaskStackBuffer,
-                                    uint32_t      *pulTimerTaskStackSize)
-{
-    static StaticTask_t xTimerTaskTCB;
-    static StackType_t  xTimerStack[configTIMER_TASK_STACK_DEPTH];
-    *ppxTimerTaskTCBBuffer   = &xTimerTaskTCB;
-    *ppxTimerTaskStackBuffer = xTimerStack;
-    *pulTimerTaskStackSize   = configTIMER_TASK_STACK_DEPTH;
-}
+// (No vApplicationGetTimerTaskMemory — configUSE_TIMERS is 0, no timer service.)
 
 // ─── Stack Overflow Hook ──────────────────────────────────────────────────────
 extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)

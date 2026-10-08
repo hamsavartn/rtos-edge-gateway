@@ -44,10 +44,9 @@ extern "C" {
 #define configQUEUE_REGISTRY_SIZE               10U
 
 // ─── Timer Task ───────────────────────────────────────────────────────────────
-#define configUSE_TIMERS                        1
-#define configTIMER_TASK_PRIORITY               (configMAX_PRIORITIES - 1)
-#define configTIMER_QUEUE_LENGTH                5U
-#define configTIMER_TASK_STACK_DEPTH            256U
+// No software timers are used anywhere in this project — keep the timer
+// service task disabled to save ~1.5 KB of static RAM.
+#define configUSE_TIMERS                        0
 
 // ─── Mutexes & Semaphores ─────────────────────────────────────────────────────
 #define configUSE_MUTEXES                       1
@@ -56,7 +55,7 @@ extern "C" {
 #define configUSE_BINARY_SEMAPHORES             1
 
 // ─── Debug & Stats ────────────────────────────────────────────────────────────
-#define configUSE_TRACE_FACILITY                1
+#define configUSE_TRACE_FACILITY                0
 #define configUSE_STATS_FORMATTING_FUNCTIONS    0
 #define configGENERATE_RUN_TIME_STATS           0
 #define configRECORD_STACK_HIGH_ADDRESS         1

@@ -20,6 +20,15 @@ static ADC_HandleTypeDef hadc1;
 
 void ADC_Driver_Init(void)
 {
+    // PA0 must be switched to analog input mode explicitly — the F1 HAL_ADC_Init
+    // does not touch GPIO, and a floating digital pin reads garbage.
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    GPIO_InitTypeDef gpio = {};
+    gpio.Pin  = GPIO_PIN_0;
+    gpio.Mode = GPIO_MODE_ANALOG;
+    gpio.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &gpio);
+
     __HAL_RCC_ADC1_CLK_ENABLE();
 
     hadc1.Instance                   = ADC1;

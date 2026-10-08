@@ -50,8 +50,8 @@ void UART_Driver_Init(void)
         "\r\n"
         "╔══════════════════════════════════════════╗\r\n"
         "║  RTOS Industrial Edge Gateway v1.0       ║\r\n"
-        "║  STM32F103C8 @ 72 MHz | FreeRTOS Static  ║\r\n"
-        "║  8 Tasks | 5 Queues | 0 Bytes Heap       ║\r\n"
+        "║  STM32F103C8 @ 64 MHz | FreeRTOS Static  ║\r\n"
+        "║  9 Tasks | 5 Queues | 0 Bytes Heap       ║\r\n"
         "╚══════════════════════════════════════════╝\r\n\r\n";
 
     HAL_UART_Transmit(&huart1, (uint8_t*)banner, strlen(banner), 1000);

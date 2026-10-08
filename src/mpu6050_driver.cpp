@@ -14,8 +14,27 @@
  */
 
 #include "mpu6050_driver.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
 
 static I2C_HandleTypeDef hi2c1;
+static StaticSemaphore_t xI2CMutexBuf;
+static SemaphoreHandle_t hI2CMutex = NULL;
+
+bool I2C_TakeMutex(uint32_t timeout_ms)
+{
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) return true;
+    if (hI2CMutex == NULL) return false;
+    return xSemaphoreTake(hI2CMutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+void I2C_GiveMutex(void)
+{
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) return;
+    if (hI2CMutex != NULL) xSemaphoreGive(hI2CMutex);
+}
+
 
 // ─── Register Map ─────────────────────────────────────────────────────────────
 #define MPU_REG_WHO_AM_I      0x75
@@ -31,17 +50,27 @@ static I2C_HandleTypeDef hi2c1;
 // ─── I2C Write helper ─────────────────────────────────────────────────────────
 static HAL_StatusTypeDef mpu_write(uint8_t reg, uint8_t val)
 {
+    HAL_StatusTypeDef s = HAL_ERROR;
     uint8_t buf[2] = { reg, val };
-    return HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, buf, 2, 10);
+    if (I2C_TakeMutex(50)) {
+        s = HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, buf, 2, 10);
+        I2C_GiveMutex();
+    }
+    return s;
 }
 
 // ─── I2C Read helper ──────────────────────────────────────────────────────────
 static HAL_StatusTypeDef mpu_read(uint8_t reg, uint8_t *data, uint16_t len)
 {
-    HAL_StatusTypeDef s;
-    s = HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, &reg, 1, 10);
-    if (s != HAL_OK) return s;
-    return HAL_I2C_Master_Receive(&hi2c1, MPU6050_I2C_ADDR, data, len, 10);
+    HAL_StatusTypeDef s = HAL_ERROR;
+    if (I2C_TakeMutex(50)) {
+        s = HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, &reg, 1, 10);
+        if (s == HAL_OK) {
+            s = HAL_I2C_Master_Receive(&hi2c1, MPU6050_I2C_ADDR, data, len, 10);
+        }
+        I2C_GiveMutex();
+    }
+    return s;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -54,6 +83,7 @@ HAL_StatusTypeDef MPU6050_Init(void)
     GPIO_InitTypeDef gpio = {};
     gpio.Pin   = GPIO_PIN_6 | GPIO_PIN_7;   // PB6=SCL, PB7=SDA
     gpio.Mode  = GPIO_MODE_AF_OD;
+    gpio.Pull  = GPIO_PULLUP;               // Add internal pull-ups for simulation
     gpio.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(GPIOB, &gpio);
 
@@ -67,6 +97,11 @@ HAL_StatusTypeDef MPU6050_Init(void)
     hi2c1.Init.NoStretchMode   = I2C_NOSTRETCH_DISABLE;
 
     if (HAL_I2C_Init(&hi2c1) != HAL_OK) return HAL_ERROR;
+
+    if (hI2CMutex == NULL) {
+        hI2CMutex = xSemaphoreCreateMutexStatic(&xI2CMutexBuf);
+        configASSERT(hI2CMutex != NULL);
+    }
 
     // Verify WHO_AM_I
     uint8_t who = 0;
@@ -129,6 +164,8 @@ static void delay_us(uint32_t us)
 
 void MPU6050_Recover(void)
 {
+    if (!I2C_TakeMutex(200)) return;
+
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
     // 1. De-initialize the I2C hardware to release AF control
@@ -166,6 +203,9 @@ void MPU6050_Recover(void)
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
     delay_us(5);
 
-    // 6. Re-initialize I2C
+    // 6. Re-initialize I2C. The mutex MUST be released first: MPU6050_Init's
+    // register access helpers take the same (non-recursive) mutex, so re-init
+    // while holding it would time out on every transfer and never recover.
+    I2C_GiveMutex();
     MPU6050_Init();
 }

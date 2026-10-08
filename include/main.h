@@ -47,6 +47,12 @@
 #define TASK_DIAG_BIT        (1 << 7)
 #define ALL_TASKS_MASK       (0xFF)
 
+// ─── Watchdog Timing ──────────────────────────────────────────────────────────
+// The DHT22 task can only check in every SAMPLE_PERIOD_DHT22_MS (2 s — the DHT22
+// sensor's minimum conversion interval), so the watchdog window MUST exceed it.
+#define WATCHDOG_WINDOW_MS   3000U   // > DHT22 period + margin
+#define IWDG_TIMEOUT_MS      4000U   // hardware IWDG period (when enabled)
+
 // ─── Queue Depths (static, pre-allocated) ────────────────────────────────────
 #define QUEUE_DEPTH_ADC      16U
 #define QUEUE_DEPTH_DHT22    8U

@@ -168,6 +168,7 @@ void vTaskUARTSensor(void *pvParams)
 
         if (status == UART_SENS_TIMEOUT) {
             // No data available — skip this cycle, no error
+            xEventGroupSetBits(xHealthGroupHandle, TASK_UART_SENS_BIT);
             vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_UART_MS));
             continue;
         } else if (status == UART_SENS_OVERFLOW) {
@@ -188,22 +189,32 @@ void vTaskUARTSensor(void *pvParams)
 // ═════════════════════════════════════════════════════════════════════════════
 // TASK 6 — Output Manager (UART log + LCD)
 // ═════════════════════════════════════════════════════════════════════════════
+// Full LCD bring-up: init + clear + boot splash. Returns true when the panel
+// acknowledges every step, false when the bus or the PCF8574 is unreachable.
+static bool try_lcd_init(void)
+{
+    HAL_StatusTypeDef st = LCD_Init();
+    if (st == HAL_OK) st = LCD_Clear();
+    if (st == HAL_OK) st = LCD_SetCursor(0, 0);
+    if (st == HAL_OK) st = LCD_Print("Gateway Booting");
+    if (st == HAL_OK) st = LCD_SetCursor(1, 0);
+    if (st == HAL_OK) st = LCD_Print("Waiting for data");
+    return st == HAL_OK;
+}
+
 void vTaskOutputManager(void *pvParams)
 {
     (void)pvParams;
     OutputPacket_t pkt;
     char           uart_buf[64];
     HAL_StatusTypeDef lcdStatus;
+    bool           lcd_ok = false;
+    uint32_t       last_lcd_update = 0;
 
-    // Attempt to initialize the LCD through the translation driver
-    // If initialization fails, the task enters the loop but will 
-    // consistently fail subsequent writes (or skip petting the watchdog), eventually triggering the IWDG.
-    lcdStatus = LCD_Init();
-    if (lcdStatus == HAL_OK) lcdStatus = LCD_Clear();
-    if (lcdStatus == HAL_OK) lcdStatus = LCD_SetCursor(0, 0);
-    if (lcdStatus == HAL_OK) lcdStatus = LCD_Print("Gateway Booting");
-    if (lcdStatus == HAL_OK) lcdStatus = LCD_SetCursor(1, 0);
-    if (lcdStatus == HAL_OK) lcdStatus = LCD_Print("Waiting for data");
+    // Attempt to initialize the LCD through the translation driver.
+    // If the LCD stays unreachable, this task never sets TASK_OUTPUT_BIT, so
+    // the Watchdog task will flag it (and IWDG resets the gateway on real HW).
+    lcd_ok = try_lcd_init();
 
     for (;;)
     {
@@ -213,44 +224,51 @@ void vTaskOutputManager(void *pvParams)
             // ── UART Log ────────────────────────────────────────────────────
             snprintf(uart_buf, sizeof(uart_buf),
                      "[%8lu] SRC=0x%02X | %s | %s\r\n",
-                     pkt.timestamp_ms,
+                     (unsigned long)pkt.timestamp_ms,
                      pkt.source_id,
                      (char*)pkt.line1,
                      (char*)pkt.line2);
             UART_Driver_Transmit((uint8_t*)uart_buf, strlen(uart_buf));
 
             // ── LCD Update (throttled to 2 Hz to prevent flickering) ────────
-            static uint32_t last_lcd_update = 0;
             if (pkt.timestamp_ms - last_lcd_update > 500) {
                 last_lcd_update = pkt.timestamp_ms;
-                
-                lcdStatus = LCD_Clear();
-                if (lcdStatus == HAL_OK) {
-                    LCD_SetCursor(0, 0);
-                    LCD_Print((char*)pkt.line1);
-                    LCD_SetCursor(1, 0);
-                    lcdStatus = LCD_Print((char*)pkt.line2);
+
+                if (!lcd_ok) {
+                    // Retry initialization at most once per throttle window so
+                    // a transient I2C glitch (or newly plugged LCD) recovers.
+                    lcd_ok = try_lcd_init();
+                }
+
+                if (lcd_ok) {
+                    lcdStatus = LCD_Clear();
+                    if (lcdStatus == HAL_OK) {
+                        lcdStatus = LCD_SetCursor(0, 0);
+                        if (lcdStatus == HAL_OK) lcdStatus = LCD_Print((char*)pkt.line1);
+                        if (lcdStatus == HAL_OK) lcdStatus = LCD_SetCursor(1, 0);
+                        if (lcdStatus == HAL_OK) lcdStatus = LCD_Print((char*)pkt.line2);
+                    }
+                    if (lcdStatus != HAL_OK) {
+                        lcd_ok = false; // Bus lost mid-frame — re-init next window
+                        ErrorHandler_Report(ERR_I2C_NACK, "LCD_WRITE");
+                    }
                 }
             }
 
             // Blink status LED on successful output
             HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
 
-            /* 
-             * Conditional Health Reporting:
-             * Only update the watchdog event group if the LCD is successfully written.
-             * If the HAL returns HAL_ERROR (e.g., NACK due to wrong address) or 
-             * HAL_BUSY (bus contention), the bit is not set. The IWDG will reset the gateway.
+            /*
+             * Health reporting: this task is demonstrably alive whenever it
+             * reaches this point (UART log flushed, queue drained). A dead LCD
+             * is an HMI fault only — it must NOT starve the whole gateway's
+             * watchdog and kill telemetry. LCD failures are reported to the
+             * ErrorHandler above and retried each throttle window instead.
              */
-            if (lcdStatus == HAL_OK) {
-                xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
-            }
+            xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
         } else {
             // No data received within timeout, but task is still healthy.
-            // Only pet watchdog if the LCD isn't in an error state.
-            if (lcdStatus == HAL_OK) {
-                xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
-            }
+            xEventGroupSetBits(xHealthGroupHandle, TASK_OUTPUT_BIT);
         }
     }
 }
@@ -263,17 +281,19 @@ void vTaskWatchdog(void *pvParams)
     (void)pvParams;
     for (;;)
     {
-        // Wait up to 1.5 seconds for all tasks to check in
+        // Wait for all tasks to check in. The window MUST be longer than the
+        // DHT22 task's check-in period (2 s — the DHT22's minimum conversion
+        // interval), otherwise a healthy system trips the watchdog forever.
         EventBits_t uxBits = xEventGroupWaitBits(
             xHealthGroupHandle,
             ALL_TASKS_MASK,
             pdTRUE, // Clear bits on exit
             pdTRUE, // Wait for ALL bits
-            pdMS_TO_TICKS(1500)
+            pdMS_TO_TICKS(WATCHDOG_WINDOW_MS)
         );
 
         if ((uxBits & ALL_TASKS_MASK) == ALL_TASKS_MASK) {
-            // All good, pet hardware watchdog
+            // All good, pet hardware watchdog (no-op unless IWDG is started)
             IWDG->KR = 0xAAAA;
         } else {
             // A task hung!
@@ -281,11 +301,16 @@ void vTaskWatchdog(void *pvParams)
             char buf[64];
             snprintf(buf, sizeof(buf), "[FATAL] WATCHDOG TIMEOUT. Hung Mask: 0x%02X\r\n", hung_tasks);
             UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
-            
+
             ErrorHandler_Report(ERR_WATCHDOG_TIMEOUT, "WATCHDOG");
-            
-            // Spin infinitely — wait for hardware IWDG to physically reset MCU
-            while (1) {}
+
+            // Highest-priority spin — starves the IWDG feeder so the hardware
+            // watchdog resets the MCU. With IWDG disabled (Wokwi default) this
+            // is a visible, logged halt instead of a silent one.
+            for (;;) {
+                HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+                for (volatile uint32_t i = 0; i < 400000; i++) { __NOP(); }
+            }
         }
     }
 }

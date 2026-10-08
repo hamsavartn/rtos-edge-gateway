@@ -33,7 +33,12 @@ static HAL_StatusTypeDef LCD_SendInternal(uint8_t data, uint8_t flags) {
     I2C_HandleTypeDef* p_hi2c1 = MPU6050_GetI2CHandle();
     if (p_hi2c1 == NULL) return HAL_ERROR;
     
-    status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 4, HAL_MAX_DELAY);
+    if (I2C_TakeMutex(100)) {
+        status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 4, 100);
+        I2C_GiveMutex();
+    } else {
+        return HAL_BUSY;
+    }
     
     // A micro-delay to satisfy HD44780 instruction execution times
     // In a zero-heap RTOS, vTaskDelay blocks, allowing other tasks to run.
@@ -53,7 +58,12 @@ static HAL_StatusTypeDef LCD_SendNibble(uint8_t nibble, uint8_t flags) {
     I2C_HandleTypeDef* p_hi2c1 = MPU6050_GetI2CHandle();
     if (p_hi2c1 == NULL) return HAL_ERROR;
     
-    status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 2, HAL_MAX_DELAY);
+    if (I2C_TakeMutex(100)) {
+        status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 2, 100);
+        I2C_GiveMutex();
+    } else {
+        return HAL_BUSY;
+    }
     vTaskDelay(pdMS_TO_TICKS(2));
     return status;
 }
@@ -88,14 +98,20 @@ HAL_StatusTypeDef LCD_Init(void) {
     // Transition to 4-bit mode (single nibble)
     LCD_SendNibble(0x20, 0);
     vTaskDelay(pdMS_TO_TICKS(10));
-    
-    // Now we are in 4-bit mode, we can use the dual-nibble LCD_Command
-    LCD_Command(0x28); // Function set: 4-bit interface, 2 lines, 5x8 font
-    LCD_Command(0x0C); // Display control: Display ON, Cursor OFF, Blink OFF
-    LCD_Command(0x01); // Clear display
+
+    // Now we are in 4-bit mode, we can use the dual-nibble LCD_Command.
+    // Check every step: a NACK here means the PCF8574 is unreachable and the
+    // caller (Output Manager) must treat the panel as offline.
+    status = LCD_Command(0x28); // Function set: 4-bit interface, 2 lines, 5x8 font
+    if (status != HAL_OK) return status;
+    status = LCD_Command(0x0C); // Display control: Display ON, Cursor OFF, Blink OFF
+    if (status != HAL_OK) return status;
+    status = LCD_Command(0x01); // Clear display
+    if (status != HAL_OK) return status;
     vTaskDelay(pdMS_TO_TICKS(5)); // Clear display takes longer to execute
-    LCD_Command(0x06); // Entry mode: Increment cursor, no display shift
-    
+    status = LCD_Command(0x06); // Entry mode: Increment cursor, no display shift
+    if (status != HAL_OK) return status;
+
     return HAL_OK;
 }
 

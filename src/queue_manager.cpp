@@ -21,27 +21,27 @@
 
 // ADC Queue
 static StaticQueue_t   xADCQueueStruct;
-static uint8_t         xADCQueueStorage[QUEUE_DEPTH_ADC * sizeof(ADCPacket_t)];
+alignas(8) static uint8_t xADCQueueStorage[QUEUE_DEPTH_ADC * sizeof(ADCPacket_t)];
 QueueHandle_t          hADCQueue;
 
 // DHT22 Queue
 static StaticQueue_t   xDHT22QueueStruct;
-static uint8_t         xDHT22QueueStorage[QUEUE_DEPTH_DHT22 * sizeof(DHT22Packet_t)];
+alignas(8) static uint8_t xDHT22QueueStorage[QUEUE_DEPTH_DHT22 * sizeof(DHT22Packet_t)];
 QueueHandle_t          hDHT22Queue;
 
 // MPU6050 Queue
 static StaticQueue_t   xMPU6050QueueStruct;
-static uint8_t         xMPU6050QueueStorage[QUEUE_DEPTH_MPU6050 * sizeof(MPU6050Packet_t)];
+alignas(8) static uint8_t xMPU6050QueueStorage[QUEUE_DEPTH_MPU6050 * sizeof(MPU6050Packet_t)];
 QueueHandle_t          hMPU6050Queue;
 
 // UART Sensor Queue
 static StaticQueue_t   xUARTSensQueueStruct;
-static uint8_t         xUARTSensQueueStorage[QUEUE_DEPTH_UART * sizeof(UARTSensorPacket_t)];
+alignas(8) static uint8_t xUARTSensQueueStorage[QUEUE_DEPTH_UART * sizeof(UARTSensorPacket_t)];
 QueueHandle_t          hUARTSensQueue;
 
 // Output Queue (feeds OutputManager task)
 static StaticQueue_t   xOutputQueueStruct;
-static uint8_t         xOutputQueueStorage[QUEUE_DEPTH_OUTPUT * sizeof(OutputPacket_t)];
+alignas(8) static uint8_t xOutputQueueStorage[QUEUE_DEPTH_OUTPUT * sizeof(OutputPacket_t)];
 QueueHandle_t          hOutputQueue;
 
 // ─── Packet Router State ──────────────────────────────────────────────────────
@@ -117,9 +117,13 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = adcPkt.timestamp_ms;
             outPkt.source_id    = 0x01;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "ADC:%umV", adcPkt.voltage_mv);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "Raw:%u", adcPkt.raw_value);
-            xQueueSend(hOutputQueue, &outPkt, 0);
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "ADC:%umV",
+                     (unsigned)adcPkt.voltage_mv);
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "Raw:%u",
+                     (unsigned)adcPkt.raw_value);
+            if (xQueueSend(hOutputQueue, &outPkt, 0) != pdTRUE) {
+                ErrorHandler_Report(ERR_QUEUE_FULL, "OUT_Q");
+            }
             s_total_routed++;
         }
 
@@ -132,11 +136,18 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = dhtPkt.timestamp_ms;
             outPkt.source_id    = 0x02;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "T:%d.%dC",
-                     dhtPkt.temperature_x10 / 10, dhtPkt.temperature_x10 % 10);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "H:%d.%d%%RH",
-                     dhtPkt.humidity_x10 / 10, dhtPkt.humidity_x10 % 10);
-            xQueueSend(hOutputQueue, &outPkt, 0);
+            // Split sign from fraction explicitly: for a negative reading the
+            // plain "%d.%d" of /10 and %10 would print e.g. "T:-5.-2C".
+            int t_whole = dhtPkt.temperature_x10 / 10;
+            int t_frac  = dhtPkt.temperature_x10 % 10;
+            if (t_frac < 0) t_frac = -t_frac;
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "T:%d.%uC", t_whole, t_frac);
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "H:%u.%u%%RH",
+                     (unsigned)(dhtPkt.humidity_x10 / 10),
+                     (unsigned)(dhtPkt.humidity_x10 % 10));
+            if (xQueueSend(hOutputQueue, &outPkt, 0) != pdTRUE) {
+                ErrorHandler_Report(ERR_QUEUE_FULL, "OUT_Q");
+            }
             s_total_routed++;
         }
 
@@ -149,11 +160,13 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = mpuPkt.timestamp_ms;
             outPkt.source_id    = 0x03;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "AX:%d AY:%d",
-                     mpuPkt.accel_x, mpuPkt.accel_y);
-            snprintf((char*)outPkt.line2, LCD_COLS + 1, "GX:%d GY:%d",
-                     mpuPkt.gyro_x, mpuPkt.gyro_y);
-            xQueueSend(hOutputQueue, &outPkt, 0);
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "A:%d,%d",
+                     (int)mpuPkt.accel_x, (int)mpuPkt.accel_y);
+            snprintf((char*)outPkt.line2, LCD_COLS + 1, "G:%d,%d",
+                     (int)mpuPkt.gyro_x, (int)mpuPkt.gyro_y);
+            if (xQueueSend(hOutputQueue, &outPkt, 0) != pdTRUE) {
+                ErrorHandler_Report(ERR_QUEUE_FULL, "OUT_Q");
+            }
             s_total_routed++;
         }
 
@@ -166,12 +179,15 @@ void vTaskQueueManager(void *pvParams)
             }
             outPkt.timestamp_ms = uartPkt.timestamp_ms;
             outPkt.source_id    = 0x04;
-            snprintf((char*)outPkt.line1, LCD_COLS + 1, "UART[%uB]", uartPkt.length);
+            snprintf((char*)outPkt.line1, LCD_COLS + 1, "UART[%uB]",
+                     (unsigned)uartPkt.length);
             memset(outPkt.line2, ' ', LCD_COLS);
             uint8_t copy_len = (uartPkt.length < LCD_COLS) ? uartPkt.length : LCD_COLS;
             memcpy(outPkt.line2, uartPkt.payload, copy_len);
             outPkt.line2[copy_len] = '\0';
-            xQueueSend(hOutputQueue, &outPkt, 0);
+            if (xQueueSend(hOutputQueue, &outPkt, 0) != pdTRUE) {
+                ErrorHandler_Report(ERR_QUEUE_FULL, "OUT_Q");
+            }
             s_total_routed++;
         }
 

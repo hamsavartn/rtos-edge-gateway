@@ -62,9 +62,19 @@ void ErrorHandler_Report(ErrorCode_t code, const char *source)
     {
         char buf[64];
         snprintf(buf, sizeof(buf), "[ERR] Code=0x%02X Src=%s T=%lu\r\n",
-                 code, source ? source : "?", xTaskGetTickCount());
+                 (unsigned)code, source ? source : "?",
+                 (unsigned long)xTaskGetTickCount());
         UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
     }
+}
+
+// ─── Busy delay for fault contexts ───────────────────────────────────────────
+// HAL_Delay() relies on the SysTick interrupt, which is masked in fatal fault
+// contexts (taskDISABLE_INTERRUPTS / overflow hooks) — a busy loop is the only
+// reliable delay there.
+static void fault_delay(uint32_t iterations)
+{
+    while (iterations--) { __NOP(); }
 }
 
 // ─── Stack Overflow (called from hook) ───────────────────────────────────────
@@ -77,7 +87,7 @@ void ErrorHandler_StackOverflow(const char *taskName)
     // Blink LED rapidly to signal fatal fault
     for (;;) {
         HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
-        HAL_Delay(100);
+        fault_delay(200000);
     }
 }
 
@@ -85,13 +95,13 @@ void ErrorHandler_StackOverflow(const char *taskName)
 void ErrorHandler_Fatal(ErrorCode_t code)
 {
     char buf[48];
-    snprintf(buf, sizeof(buf), "[FATAL] Code=0x%02X — System halted\r\n", code);
+    snprintf(buf, sizeof(buf), "[FATAL] Code=0x%02X — System halted\r\n", (unsigned)code);
     UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
 
     taskDISABLE_INTERRUPTS();
     for (;;) {
         HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
-        HAL_Delay(200);
+        fault_delay(400000);
     }
 }
 
@@ -116,7 +126,7 @@ void vTaskErrorHandler(void *pvParams)
                 ErrorEntry_t *e = &s_error_log[last_printed];
                 snprintf(buf, sizeof(buf),
                          "[ERR_LOG] T=%8lu Code=0x%02X Src=%-12s\r\n",
-                         e->timestamp_ms, e->code, e->source);
+                         (unsigned long)e->timestamp_ms, (unsigned)e->code, e->source);
                 UART_Driver_Transmit((uint8_t*)buf, strlen(buf));
                 last_printed = (last_printed + 1) % ERROR_LOG_SIZE;
             }
