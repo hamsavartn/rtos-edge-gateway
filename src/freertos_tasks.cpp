@@ -209,6 +209,7 @@ void vTaskOutputManager(void *pvParams)
     char           uart_buf[64];
     HAL_StatusTypeDef lcdStatus;
     bool           lcd_ok = false;
+    bool           init_fail_logged = false;
     uint32_t       last_lcd_update = 0;
 
     // Attempt to initialize the LCD through the translation driver.
@@ -238,6 +239,11 @@ void vTaskOutputManager(void *pvParams)
                     // Retry initialization at most once per throttle window so
                     // a transient I2C glitch (or newly plugged LCD) recovers.
                     lcd_ok = try_lcd_init();
+                    if (!lcd_ok && !init_fail_logged) {
+                        ErrorHandler_Report(ERR_I2C_NACK, "LCD_INIT");
+                        init_fail_logged = true;   // once per failure episode
+                    }
+                    if (lcd_ok) init_fail_logged = false;
                 }
 
                 if (lcd_ok) {
