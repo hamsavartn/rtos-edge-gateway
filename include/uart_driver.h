@@ -5,7 +5,7 @@ void              UART_Driver_Init(void);
 void              UART_Driver_Transmit(const uint8_t *data, uint16_t len);
 HAL_StatusTypeDef UART_Driver_Receive(uint8_t *buf, uint16_t len, uint32_t timeout_ms);
 
-// Convenience: mutex-protected C-string print (task context).
+// Convenience: mutex-protected C-string print (task context). C linkage so the
+// C-side assert handler can also use the raw variant.
 void              UART_Driver_Print(const char *s);
-// Raw, mutex-free print — safe in fault/ISR context where the scheduler is dead.
-void              UART_Driver_PrintRaw(const char *s);
+extern "C" void   UART_Driver_PrintRaw(const char *s);

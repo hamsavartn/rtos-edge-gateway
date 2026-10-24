@@ -74,7 +74,7 @@ void UART_Driver_Print(const char *s)
     UART_Driver_Transmit((const uint8_t*)s, (uint16_t)strlen(s));
 }
 
-void UART_Driver_PrintRaw(const char *s)
+extern "C" void UART_Driver_PrintRaw(const char *s)
 {
     if (!s) return;
     HAL_UART_Transmit(&huart1, (uint8_t*)s, (uint16_t)strlen(s), UART_TIMEOUT_MS * 10);
