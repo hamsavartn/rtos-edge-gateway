@@ -32,7 +32,7 @@ void vTaskDiagnostics(void *pvParams)
 {
     (void)pvParams;
     char buf[128];
-    UART_Driver_Print("[T] diag\r\n");
+    UART_Driver_PrintRaw("[T] diag\r\n");
 
     TickType_t last_print = 0;
     for (;;)

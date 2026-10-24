@@ -35,7 +35,7 @@ void vTaskADCSensor(void *pvParams)
     (void)pvParams;
     ADCPacket_t pkt;
     TickType_t  xLastWake = xTaskGetTickCount();
-    UART_Driver_Print("[T] adc\r\n");
+    UART_Driver_PrintRaw("[T] adc\r\n");
 
     for (;;)
     {
@@ -70,7 +70,7 @@ void vTaskDHT22Sensor(void *pvParams)
     DHT22Packet_t pkt;
     DHT22_Data_t  raw;
     TickType_t    xLastWake = xTaskGetTickCount();
-    UART_Driver_Print("[T] dht22\r\n");
+    UART_Driver_PrintRaw("[T] dht22\r\n");
 
     for (;;)
     {
@@ -117,7 +117,7 @@ void vTaskMPU6050Sensor(void *pvParams)
     MPU6050Packet_t  pkt;
     MPU6050_RawData_t raw;
     TickType_t        xLastWake = xTaskGetTickCount();
-    UART_Driver_Print("[T] mpu\r\n");
+    UART_Driver_PrintRaw("[T] mpu\r\n");
 
     for (;;)
     {
@@ -159,7 +159,7 @@ void vTaskUARTSensor(void *pvParams)
     (void)pvParams;
     UARTSensorPacket_t pkt;
     TickType_t         xLastWake = xTaskGetTickCount();
-    UART_Driver_Print("[T] uarts\r\n");
+    UART_Driver_PrintRaw("[T] uarts\r\n");
 
     for (;;)
     {
@@ -215,7 +215,7 @@ void vTaskOutputManager(void *pvParams)
     bool           lcd_ok = false;
     bool           init_fail_logged = false;
     uint32_t       last_lcd_update = 0;
-    UART_Driver_Print("[T] output\r\n");
+    UART_Driver_PrintRaw("[T] output\r\n");
 
     // Attempt to initialize the LCD through the translation driver.
     // If the LCD stays unreachable, this task never sets TASK_OUTPUT_BIT, so
@@ -290,7 +290,7 @@ void vTaskOutputManager(void *pvParams)
 void vTaskWatchdog(void *pvParams)
 {
     (void)pvParams;
-    UART_Driver_Print("[T] watchdog\r\n");
+    UART_Driver_PrintRaw("[T] watchdog\r\n");
     for (;;)
     {
         // Wait for all tasks to check in. The window MUST be longer than the

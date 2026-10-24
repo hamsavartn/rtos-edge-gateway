@@ -286,9 +286,13 @@ int main(void)
     configASSERT(hDiagTask     != nullptr);
     configASSERT(hWatchdogTask != nullptr);
     configASSERT(xHealthGroupHandle != nullptr);
+
+#ifndef CANARY_ONLY
     boot_trace("S3 tasks spawned");
 
-#ifdef CANARY_ONLY
+    // Hand control to FreeRTOS scheduler — never returns
+    boot_trace("S4 starting scheduler");
+#else
     (void)hADCTask; (void)hDHT22Task; (void)hMPU6050Task; (void)hUARTSensTask;
     (void)hQueueMgrTask; (void)hOutputTask; (void)hErrorTask; (void)hDiagTask;
     (void)hWatchdogTask;
@@ -296,9 +300,6 @@ int main(void)
                       nullptr, PRIORITY_SENSOR,
                       xCanaryStack, &xCanaryTaskBuffer);
     boot_trace("S3c canary spawned (CANARY_ONLY build)");
-#else
-    // Hand control to FreeRTOS scheduler — never returns
-    boot_trace("S4 starting scheduler");
 #endif
     vTaskStartScheduler();
 
