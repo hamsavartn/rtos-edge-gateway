@@ -46,8 +46,23 @@ void ADC_Driver_Init(void)
     sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES_5;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-    // Self-calibration (STM32F1 specific)
-    HAL_ADCEx_Calibration_Start(&hadc1);
+    // ── Self-calibration (STM32F1 specific) with a BOUNDED wait ──────────────
+    // HAL_ADCEx_Calibration_Start polls ADC_CR2.CAL with no timeout; a simulator
+    // (or a glitched peripheral) that never clears the flag would hang the boot
+    // before the scheduler starts — total silence after the UART banner. On real
+    // silicon calibration finishes in microseconds, so the bound never trips.
+    __HAL_ADC_ENABLE(&hadc1);
+    for (volatile uint32_t i = 0; i < 10000; i++) { __NOP(); }   // t_STAB ≥ 1 µs
+
+    ADC1->CR2 |= ADC_CR2_RSTCAL;                                 // reset calibration
+    uint32_t guard = 1000000U;
+    while ((ADC1->CR2 & ADC_CR2_RSTCAL) && --guard) { __NOP(); }
+
+    ADC1->CR2 |= ADC_CR2_CAL;                                    // start calibration
+    guard = 1000000U;
+    while ((ADC1->CR2 & ADC_CR2_CAL) && --guard) { __NOP(); }
+    // If the guard expired, calibration is skipped — conversions still run
+    // (slightly less accurate); the task surfaces errors via its queue.
 }
 
 HAL_StatusTypeDef ADC_Driver_Read(uint16_t *out_raw)

@@ -68,6 +68,18 @@ void UART_Driver_Transmit(const uint8_t *data, uint16_t len)
     }
 }
 
+void UART_Driver_Print(const char *s)
+{
+    if (!s) return;
+    UART_Driver_Transmit((const uint8_t*)s, (uint16_t)strlen(s));
+}
+
+void UART_Driver_PrintRaw(const char *s)
+{
+    if (!s) return;
+    HAL_UART_Transmit(&huart1, (uint8_t*)s, (uint16_t)strlen(s), UART_TIMEOUT_MS * 10);
+}
+
 HAL_StatusTypeDef UART_Driver_Receive(uint8_t *buf, uint16_t len, uint32_t timeout_ms)
 {
     return HAL_UART_Receive(&huart1, buf, len, timeout_ms);

@@ -99,6 +99,7 @@ void QueueManager_Init(void)
 void vTaskQueueManager(void *pvParams)
 {
     (void)pvParams;
+    UART_Driver_Print("[T] qmgr\r\n");
 
     ADCPacket_t        adcPkt;
     DHT22Packet_t      dhtPkt;

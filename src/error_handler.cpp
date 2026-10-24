@@ -113,6 +113,7 @@ uint32_t ErrorHandler_GetTotalErrors(void) { return s_total_errors; }
 void vTaskErrorHandler(void *pvParams)
 {
     (void)pvParams;
+    UART_Driver_Print("[T] error\r\n");
     char          buf[80];
     uint8_t       last_printed = 0;
 

@@ -95,18 +95,32 @@ static void SystemClock_Config(void);
 static void GPIO_Init(void);
 static void Peripherals_Init(void);
 
+// ─── Boot trace ───────────────────────────────────────────────────────────────
+// One short marker per init stage and per task first-run. The LAST marker on
+// the serial monitor pinpoints the exact stage of any silent hang. Uses the
+// raw (mutex-free) path so markers work before the UART mutex even exists.
+static void boot_trace(const char *msg)
+{
+    UART_Driver_PrintRaw("[BOOT] ");
+    UART_Driver_PrintRaw(msg);
+    UART_Driver_PrintRaw("\r\n");
+}
+
 int main(void)
 {
-    // HAL + Clock
+    // HAL + Clock + GPIO + Peripherals (UART_Driver_Init prints the banner and
+    // creates the log mutex — only after this point are markers guaranteed out)
     HAL_Init();
     SystemClock_Config();
     GPIO_Init();
     Peripherals_Init();
+    boot_trace("S1 clock+gpio+peripherals ok");
 
     // Init subsystems (all static — no heap)
     QueueManager_Init();
     ErrorHandler_Init();
     Diagnostics_Init();
+    boot_trace("S2 subsystems ok");
 
     xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
 
@@ -232,8 +246,10 @@ int main(void)
     configASSERT(hDiagTask     != nullptr);
     configASSERT(hWatchdogTask != nullptr);
     configASSERT(xHealthGroupHandle != nullptr);
+    boot_trace("S3 tasks spawned");
 
     // Hand control to FreeRTOS scheduler — never returns
+    boot_trace("S4 starting scheduler");
     vTaskStartScheduler();
 
     // Should never reach here
@@ -301,9 +317,13 @@ static void GPIO_Init(void)
 static void Peripherals_Init(void)
 {
     UART_Driver_Init();       // USART1 — PA9 TX, PA10 RX (115200 baud)
-    ADC_Driver_Init();        // ADC1   — PA0 Channel 0
+    boot_trace("S1a usart1");
+    ADC_Driver_Init();        // ADC1   — PA0 Channel 0 (bounded calibration)
+    boot_trace("S1b adc");
     MPU6050_Init();           // I2C1   — PB6 SCL, PB7 SDA
+    boot_trace("S1c i2c-mpu");
     UARTSensor_Driver_Init(); // USART2 — PA2 TX, PA3 RX (9600 baud)
+    boot_trace("S1d usart2");
 }
 
 // ─── FreeRTOS Static Memory Hooks (required for configSUPPORT_STATIC_ALLOCATION) ──
@@ -331,6 +351,19 @@ extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskNa
 extern "C" void vApplicationMallocFailedHook(void)
 {
     ErrorHandler_Fatal(ERR_HEAP_ALLOC_ATTEMPTED);
+}
+
+// ─── Hard Fault Handler ───────────────────────────────────────────────────────
+// Overrides the startup file's silent infinite-loop default: a hard fault is
+// reported over UART and blinked on the LED instead of vanishing.
+extern "C" void HardFault_Handler(void)
+{
+    UART_Driver_PrintRaw("\r\n[FATAL] HARD FAULT\r\n");
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+        HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+        for (volatile uint32_t i = 0; i < 400000; i++) { __NOP(); }
+    }
 }
 
 // ─── SysTick Handler ──────────────────────────────────────────────────────────
