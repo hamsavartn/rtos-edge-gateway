@@ -122,6 +122,24 @@ int main(void)
     Diagnostics_Init();
     boot_trace("S2 subsystems ok");
 
+    // ── NVIC priority-bit probe (diagnostic, matches the kernel's own check) ──
+    // Wokwi's CPU model leaves the IPR register stubbed (read-back 0x00); real
+    // F103 silicon reads 0xF0 (4 implemented bits, top-aligned). The printed
+    // value documents which world we are running in.
+    {
+        volatile uint8_t *const pucIPR0 = (volatile uint8_t *const)0xE000E400U;
+        uint8_t original = *pucIPR0;
+        *pucIPR0 = 0xFFU;
+        uint8_t readback = *pucIPR0;
+        *pucIPR0 = original;
+        char hex[18] = "[BOOT] nvic ipr=";
+        static const char HEX[] = "0123456789ABCDEF";
+        hex[16] = HEX[(readback >> 4) & 0x0F];
+        hex[17] = HEX[readback & 0x0F];
+        UART_Driver_PrintRaw(hex);
+        UART_Driver_PrintRaw("\r\n");
+    }
+
     xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
 
 #ifdef ENABLE_IWDG

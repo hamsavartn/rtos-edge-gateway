@@ -71,6 +71,16 @@ extern "C" {
 #define configLIBRARY_LOWEST_INTERRUPT_PRIORITY    15U
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5U
 
+// Compile-time validation of the syscall priority against configPRIO_BITS.
+// The kernel's runtime assert (port.c) is relaxed only for a stubbed NVIC
+// (Wokwi simulator); these guards preserve the real-hardware check.
+#if ( ( ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8U - configPRIO_BITS ) ) & 0xFFU ) == 0U )
+#error "configMAX_SYSCALL_INTERRUPT_PRIORITY computes to 0 — invalid"
+#endif
+#if ( ( ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8U - configPRIO_BITS ) ) & 0xFFU ) != ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8U - configPRIO_BITS ) ) )
+#error "configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY out of range for configPRIO_BITS"
+#endif
+
 #define configKERNEL_INTERRUPT_PRIORITY     ( configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS) )
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS) )
 
