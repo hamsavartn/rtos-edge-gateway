@@ -79,6 +79,11 @@ alignas(8) static StackType_t   xWatchdogStack[STACK_SIZE_SYSTEM];
 static StaticEventGroup_t xHealthEventGroup;
 EventGroupHandle_t xHealthGroupHandle = nullptr;
 
+#ifdef CANARY_ONLY
+static StaticTask_t  xCanaryTaskBuffer;
+alignas(8) static StackType_t xCanaryStack[configMINIMAL_STACK_SIZE * 2U];
+#endif
+
 // ─── Task Handles ─────────────────────────────────────────────────────────────
 TaskHandle_t hADCTask       = nullptr;
 TaskHandle_t hDHT22Task     = nullptr;
@@ -105,6 +110,23 @@ static void boot_trace(const char *msg)
     UART_Driver_PrintRaw(msg);
     UART_Driver_PrintRaw("\r\n");
 }
+
+#ifdef CANARY_ONLY
+// ─── Diagnostic canary (build with -DCANARY_ONLY=1) ──────────────────────────
+// One minimal task, no mutexes, raw prints. Discriminates: context-restore
+// broken (assert again) vs scheduler OK but tick dead (first print only) vs
+// fully working (both prints repeat).
+static void vTaskCanary(void *pvParams)
+{
+    (void)pvParams;
+    UART_Driver_PrintRaw("[T] canary\r\n");
+    for (;;)
+    {
+        UART_Driver_PrintRaw("[T] canary alive (tick ok)\r\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+#endif
 
 int main(void)
 {
@@ -266,8 +288,18 @@ int main(void)
     configASSERT(xHealthGroupHandle != nullptr);
     boot_trace("S3 tasks spawned");
 
+#ifdef CANARY_ONLY
+    (void)hADCTask; (void)hDHT22Task; (void)hMPU6050Task; (void)hUARTSensTask;
+    (void)hQueueMgrTask; (void)hOutputTask; (void)hErrorTask; (void)hDiagTask;
+    (void)hWatchdogTask;
+    xTaskCreateStatic(vTaskCanary, "Canary", configMINIMAL_STACK_SIZE * 2U,
+                      nullptr, PRIORITY_SENSOR,
+                      xCanaryStack, &xCanaryTaskBuffer);
+    boot_trace("S3c canary spawned (CANARY_ONLY build)");
+#else
     // Hand control to FreeRTOS scheduler — never returns
     boot_trace("S4 starting scheduler");
+#endif
     vTaskStartScheduler();
 
     // Should never reach here
