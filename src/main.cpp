@@ -353,6 +353,29 @@ extern "C" void vApplicationMallocFailedHook(void)
     ErrorHandler_Fatal(ERR_HEAP_ALLOC_ATTEMPTED);
 }
 
+// ─── Idle Hook ────────────────────────────────────────────────────────────────
+// One-shot marker: if "[T] idle" appears but no task markers do, the scheduler
+// runs and the tick is dead; if nothing appears at all, the first context
+// switch itself never completes (assert/fault — now loud).
+extern "C" void vApplicationIdleHook(void)
+{
+    static bool s_idle_announced = false;
+    if (!s_idle_announced) {
+        s_idle_announced = true;
+        UART_Driver_PrintRaw("[T] idle (scheduler alive)\r\n");
+    }
+}
+
+// ─── Fatal LED blink shared by fault handlers ─────────────────────────────────
+extern "C" void LED_FatalBlink(void)
+{
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+        HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+        for (volatile uint32_t i = 0; i < 400000; i++) { __NOP(); }
+    }
+}
+
 // ─── Hard Fault Handler ───────────────────────────────────────────────────────
 // Overrides the startup file's silent infinite-loop default: a hard fault is
 // reported over UART and blinked on the LED instead of vanishing.
