@@ -22,7 +22,13 @@
       "id": "mpu1",
       "top": 80,
       "left": 240,
-      "attrs": {}
+      "attrs": {
+        "accelX": "0.50",
+        "accelY": "-0.25",
+        "rotationX": "10",
+        "rotationY": "-5",
+        "temperature": "24"
+      }
     },
     {
       "type": "wokwi-lcd1602",
