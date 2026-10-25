@@ -128,6 +128,42 @@ static void vTaskCanary(void *pvParams)
 }
 #endif
 
+#ifdef CANARY_ONLY
+// ─── TIM2 tick probe ─────────────────────────────────────────────────────────
+// Evidence so far: task entry works, but no [T] tick, no [T] idle, no second
+// task — SysTick (and possibly all core-exception delivery) never fires in
+// this simulator. If a peripheral timer interrupt IS delivered, the FreeRTOS
+// tick can be moved to TIM2 and the RTOS runs properly.
+static volatile bool s_tim2_fired = false;
+
+extern "C" void TIM2_IRQHandler(void)
+{
+    TIM2->SR = ~TIM_SR_UIF;                    // clear update flag
+    HAL_IncTick();                             // keep HAL time alive too
+    if (!s_tim2_fired) {
+        s_tim2_fired = true;
+        UART_Driver_PrintRaw("[T] tim2 irq (NVIC delivery ok)\r\n");
+    }
+    if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+        extern void xPortSysTickHandler(void);
+        xPortSysTickHandler();                 // drive the FreeRTOS tick
+    }
+}
+
+static void tim2_tick_init(void)
+{
+    __HAL_RCC_TIM2_CLK_ENABLE();
+    // TIM2 clock = 2 × PCLK1 = 64 MHz (APB1 prescaler 2 → timer ×2).
+    // PSC 64-1 → 1 MHz; ARR 1000-1 → 1 kHz tick.
+    TIM2->PSC  = 64 - 1;
+    TIM2->ARR  = 1000 - 1;
+    TIM2->DIER = TIM_DIER_UIE;
+    HAL_NVIC_SetPriority(TIM2_IRQn, 6, 0);     // ≤ syscall ceiling rules
+    HAL_NVIC_EnableIRQ(TIM2_IRQn);
+    TIM2->CR1  = TIM_CR1_CEN;
+}
+#endif
+
 int main(void)
 {
     // HAL + Clock + GPIO + Peripherals (UART_Driver_Init prints the banner and
@@ -296,6 +332,7 @@ int main(void)
     xTaskCreateStatic(vTaskCanary, "Canary", configMINIMAL_STACK_SIZE * 2U,
                       nullptr, PRIORITY_SENSOR,
                       xCanaryStack, &xCanaryTaskBuffer);
+    tim2_tick_init();
     boot_trace("S3c canary spawned (CANARY_ONLY build)");
 #else
     boot_trace("S3 tasks spawned");
