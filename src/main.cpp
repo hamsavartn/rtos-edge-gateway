@@ -140,6 +140,13 @@ static void run_sim_superloop(void)
 {
     UART_Driver_PrintRaw("[BOOT] SIM_SUPERLOOP: cooperative mode "
                          "(Wokwi delivers no interrupts)\r\n");
+    {
+        // MPU init evidence: WHO_AM_I value seen at boot (0x68 on real HW;
+        // Wokwi's model may differ — config is written regardless in sim).
+        char wb[48];
+        snprintf(wb, sizeof(wb), "[MPU] who_am_i=0x%02X (expect 0x68)\r\n", g_mpu_who_am_i);
+        UART_Driver_PrintRaw(wb);
+    }
 
     // LCD splash (same as Output Manager boot path)
     bool lcd_ok = (LCD_Init() == HAL_OK);
@@ -178,6 +185,17 @@ static void run_sim_superloop(void)
             last_mpu = sim_now_ms;
             MPU6050_RawData_t m;
             if (MPU6050_ReadAll(&m) == HAL_OK) {
+                static bool s_mpu_dumped = false;
+                if (!s_mpu_dumped) {
+                    s_mpu_dumped = true;
+                    // One-shot raw evidence of the first 14-byte burst
+                    char db[72];
+                    snprintf(db, sizeof(db),
+                             "[MPU] burst: AX=%d AY=%d AZ=%d T=%d GX=%d GY=%d GZ=%d\r\n",
+                             (int)m.accel_x, (int)m.accel_y, (int)m.accel_z,
+                             (int)m.temp_raw, (int)m.gyro_x, (int)m.gyro_y, (int)m.gyro_z);
+                    UART_Driver_PrintRaw(db);
+                }
                 snprintf(line1, sizeof(line1), "A:%d,%d", (int)m.accel_x, (int)m.accel_y);
                 snprintf(line2, sizeof(line2), "G:%d,%d", (int)m.gyro_x, (int)m.gyro_y);
                 sim_print_line(0x03, line1, line2);

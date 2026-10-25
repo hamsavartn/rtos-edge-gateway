@@ -12,5 +12,8 @@ HAL_StatusTypeDef  MPU6050_ReadAll(MPU6050_RawData_t *out);
 I2C_HandleTypeDef* MPU6050_GetI2CHandle(void);
 void MPU6050_Recover(void);
 
+// Last WHO_AM_I read during init (0xFF if never read) — diagnostic evidence.
+extern uint8_t g_mpu_who_am_i;
+
 bool I2C_TakeMutex(uint32_t timeout_ms);
 void I2C_GiveMutex(void);

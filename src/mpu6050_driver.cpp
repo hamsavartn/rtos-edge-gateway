@@ -25,6 +25,7 @@
 static I2C_HandleTypeDef hi2c1;
 static StaticSemaphore_t xI2CMutexBuf;
 static SemaphoreHandle_t hI2CMutex = NULL;
+uint8_t g_mpu_who_am_i = 0xFF;   // diagnostic: last WHO_AM_I value seen
 
 bool I2C_TakeMutex(uint32_t timeout_ms)
 {
@@ -124,7 +125,15 @@ HAL_StatusTypeDef MPU6050_Init(void)
     // Verify WHO_AM_I
     uint8_t who = 0;
     if (mpu_read(MPU_REG_WHO_AM_I, &who, 1) != HAL_OK) return HAL_ERROR;
+    g_mpu_who_am_i = who;
+#ifdef SIM_SUPERLOOP
+    // Wokwi's model ACKs all register accesses but may not implement WHO_AM_I.
+    // Gating config on it previously aborted init BEFORE the wake write — a
+    // sleeping MPU then ACKs every read while returning zeros for data
+    // registers (attrs ignored). Always write the configuration in sim.
+#else
     if (who != MPU_WHO_AM_I_VAL) return HAL_ERROR;
+#endif
 
     // Wake up (clear sleep bit), use PLL with X gyro reference
     if (mpu_write(MPU_REG_PWR_MGMT_1, 0x01) != HAL_OK) return HAL_ERROR;
