@@ -61,10 +61,19 @@ void UART_Driver_Transmit(const uint8_t *data, uint16_t len)
 {
     if (!data || len == 0) return;
 
-    if (xSemaphoreTake(hUARTMutex, pdMS_TO_TICKS(50)) == pdTRUE)
+    // Mutex only exists as a lock once the scheduler runs; pre-scheduler
+    // (SIM_SUPERLOOP) callers are single-threaded by construction.
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+    {
+        if (xSemaphoreTake(hUARTMutex, pdMS_TO_TICKS(50)) == pdTRUE)
+        {
+            HAL_UART_Transmit(&huart1, (uint8_t*)data, len, UART_TIMEOUT_MS * 10);
+            xSemaphoreGive(hUARTMutex);
+        }
+    }
+    else
     {
         HAL_UART_Transmit(&huart1, (uint8_t*)data, len, UART_TIMEOUT_MS * 10);
-        xSemaphoreGive(hUARTMutex);
     }
 }
 

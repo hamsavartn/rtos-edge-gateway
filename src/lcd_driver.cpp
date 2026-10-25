@@ -14,6 +14,37 @@
 #define LCD_RS 0x01 // Register select bit (P0)
 #define LCD_BL 0x08 // Backlight bit (P3)
 
+// ─── Scheduler-aware delay ───────────────────────────────────────────────────
+// vTaskDelay is only valid once the scheduler runs (RTOS builds). In the
+// SIM_SUPERLOOP build (Wokwi delivers no interrupts → no tick) use a busy
+// delay driven by the DWT cycle counter with a calibrated loop fallback.
+static int s_lcd_dwt_ok = -1;
+static void lcd_delay_ms(uint32_t ms)
+{
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        vTaskDelay(pdMS_TO_TICKS(ms));
+        return;
+    }
+    if (s_lcd_dwt_ok < 0) {
+        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+        DWT->CYCCNT = 0;
+        uint32_t start = DWT->CYCCNT;
+        for (volatile uint32_t i = 0; i < 1000; i++) { __NOP(); }
+        s_lcd_dwt_ok = (DWT->CYCCNT != start) ? 1 : 0;
+    }
+    while (ms--) {
+        if (s_lcd_dwt_ok) {
+            uint32_t start = DWT->CYCCNT;
+            uint32_t ticks = SystemCoreClock / 1000UL;
+            while ((DWT->CYCCNT - start) < ticks) {}
+        } else {
+            uint32_t loops = SystemCoreClock / 7000000UL * 1000U;
+            while (loops--) { __NOP(); }
+        }
+    }
+}
+
 // ─── Internal function to transmit a nibble sequence via HAL ────────────
 static HAL_StatusTypeDef LCD_SendInternal(uint8_t data, uint8_t flags) {
     HAL_StatusTypeDef status;
@@ -42,7 +73,7 @@ static HAL_StatusTypeDef LCD_SendInternal(uint8_t data, uint8_t flags) {
     
     // A micro-delay to satisfy HD44780 instruction execution times
     // In a zero-heap RTOS, vTaskDelay blocks, allowing other tasks to run.
-    vTaskDelay(pdMS_TO_TICKS(2));
+    lcd_delay_ms(2);
     
     return status;
 }
@@ -64,7 +95,7 @@ static HAL_StatusTypeDef LCD_SendNibble(uint8_t nibble, uint8_t flags) {
     } else {
         return HAL_BUSY;
     }
-    vTaskDelay(pdMS_TO_TICKS(2));
+    lcd_delay_ms(2);
     return status;
 }
 
@@ -82,22 +113,22 @@ HAL_StatusTypeDef LCD_Init(void) {
     HAL_StatusTypeDef status;
     
     // Wait for the LCD internal voltage to stabilize post-boot
-    vTaskDelay(pdMS_TO_TICKS(50));
+    lcd_delay_ms(50);
     
     // Hardware reset sequence to force 8-bit boundary sync
     // Send single nibbles (upper 4 bits of the command)
     status = LCD_SendNibble(0x30, 0);
     if (status != HAL_OK) return status;
-    vTaskDelay(pdMS_TO_TICKS(5));
+    lcd_delay_ms(5);
     
     LCD_SendNibble(0x30, 0);
-    vTaskDelay(pdMS_TO_TICKS(1));
+    lcd_delay_ms(1);
     LCD_SendNibble(0x30, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    lcd_delay_ms(10);
     
     // Transition to 4-bit mode (single nibble)
     LCD_SendNibble(0x20, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    lcd_delay_ms(10);
 
     // Now we are in 4-bit mode, we can use the dual-nibble LCD_Command.
     // Check every step: a NACK here means the PCF8574 is unreachable and the
@@ -108,7 +139,7 @@ HAL_StatusTypeDef LCD_Init(void) {
     if (status != HAL_OK) return status;
     status = LCD_Command(0x01); // Clear display
     if (status != HAL_OK) return status;
-    vTaskDelay(pdMS_TO_TICKS(5)); // Clear display takes longer to execute
+    lcd_delay_ms(5); // Clear display takes longer to execute
     status = LCD_Command(0x06); // Entry mode: Increment cursor, no display shift
     if (status != HAL_OK) return status;
 
@@ -117,7 +148,7 @@ HAL_StatusTypeDef LCD_Init(void) {
 
 HAL_StatusTypeDef LCD_Clear(void) {
     HAL_StatusTypeDef status = LCD_Command(0x01);
-    vTaskDelay(pdMS_TO_TICKS(2));
+    lcd_delay_ms(2);
     return status;
 }
 

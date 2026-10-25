@@ -74,6 +74,22 @@ static inline void dht_low(void)  { HAL_GPIO_WritePin(DHT22_PORT, DHT22_PIN, GPI
 static inline void dht_high(void) { HAL_GPIO_WritePin(DHT22_PORT, DHT22_PIN, GPIO_PIN_SET); }
 static inline uint8_t dht_read(void) { return HAL_GPIO_ReadPin(DHT22_PORT, DHT22_PIN); }
 
+// ─── Critical-section shim ───────────────────────────────────────────────────
+// In SIM_SUPERLOOP builds the scheduler never starts; kernel critical sections
+// would dereference a NULL current-TCB. Fall back to a plain interrupt mask.
+#include "FreeRTOS.h"
+#include "task.h"
+static inline void dht_crit_enter(void)
+{
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) taskENTER_CRITICAL();
+    else __disable_irq();
+}
+static inline void dht_crit_exit(void)
+{
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) taskEXIT_CRITICAL();
+    else __enable_irq();
+}
+
 // ─── Read 40 bits from DHT22 ──────────────────────────────────────────────────
 DHT22_Status_t DHT22_Read(DHT22_Data_t *out)
 {
@@ -83,7 +99,7 @@ DHT22_Status_t DHT22_Read(DHT22_Data_t *out)
     uint32_t timeout;
 
     // ── Start signal: pull LOW ≥ 1 ms ────────────────────────────────────────
-    taskENTER_CRITICAL();
+    dht_crit_enter();
 
     dht_output();
     dht_low();
@@ -94,18 +110,18 @@ DHT22_Status_t DHT22_Read(DHT22_Data_t *out)
 
     // ── Wait for sensor response: 80 µs LOW ──────────────────────────────────
     timeout = 10000;
-    while (dht_read() == GPIO_PIN_SET)  { if (!--timeout) { taskEXIT_CRITICAL(); return DHT22_TIMEOUT; } }
+    while (dht_read() == GPIO_PIN_SET)  { if (!--timeout) { dht_crit_exit(); return DHT22_TIMEOUT; } }
     timeout = 10000;
-    while (dht_read() == GPIO_PIN_RESET){ if (!--timeout) { taskEXIT_CRITICAL(); return DHT22_TIMEOUT; } }
+    while (dht_read() == GPIO_PIN_RESET){ if (!--timeout) { dht_crit_exit(); return DHT22_TIMEOUT; } }
     timeout = 10000;
-    while (dht_read() == GPIO_PIN_SET)  { if (!--timeout) { taskEXIT_CRITICAL(); return DHT22_TIMEOUT; } }
+    while (dht_read() == GPIO_PIN_SET)  { if (!--timeout) { dht_crit_exit(); return DHT22_TIMEOUT; } }
 
     // ── Read 40 bits ──────────────────────────────────────────────────────────
     for (uint8_t i = 0; i < 40; i++)
     {
         // Each bit starts with 50 µs LOW
         timeout = 10000;
-        while (dht_read() == GPIO_PIN_RESET) { if (!--timeout) { taskEXIT_CRITICAL(); return DHT22_TIMEOUT; } }
+        while (dht_read() == GPIO_PIN_RESET) { if (!--timeout) { dht_crit_exit(); return DHT22_TIMEOUT; } }
 
         // Measure HIGH duration: <28 µs = '0', ~70 µs = '1'
         delay_us(40);
@@ -115,10 +131,10 @@ DHT22_Status_t DHT22_Read(DHT22_Data_t *out)
         }
 
         timeout = 10000;
-        while (dht_read() == GPIO_PIN_SET) { if (!--timeout) { taskEXIT_CRITICAL(); return DHT22_TIMEOUT; } }
+        while (dht_read() == GPIO_PIN_SET) { if (!--timeout) { dht_crit_exit(); return DHT22_TIMEOUT; } }
     }
 
-    taskEXIT_CRITICAL();
+    dht_crit_exit();
 
     // ── Checksum ──────────────────────────────────────────────────────────────
     uint8_t checksum = data[0] + data[1] + data[2] + data[3];

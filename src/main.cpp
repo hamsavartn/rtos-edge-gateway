@@ -37,6 +37,7 @@
 #include "dht22_driver.h"
 #include "mpu6050_driver.h"
 #include "uart_sensor_driver.h"
+#include <stdio.h>
 
 // ─── FreeRTOS Static Task Buffers ────────────────────────────────────────────
 
@@ -83,6 +84,154 @@ EventGroupHandle_t xHealthGroupHandle = nullptr;
 static StaticTask_t  xCanaryTaskBuffer;
 alignas(8) static StackType_t xCanaryStack[configMINIMAL_STACK_SIZE * 2U];
 #endif
+
+#ifdef SIM_SUPERLOOP
+// ─── Wokwi demonstration superloop ───────────────────────────────────────────
+// RC-8 (measured): Wokwi's Blue Pill model delivers no interrupts — no SysTick,
+// no peripheral IRQs, no PendSV switches. A preemptive RTOS cannot execute
+// there, so this build runs the SAME drivers and output format cooperatively:
+// a 1 ms busy-delay virtual clock drives ADC/DHT22/MPU sampling, LCD refresh,
+// status LED, and periodic diagnostics. The FreeRTOS build (env
+// bluepill_f103c8) is the production firmware for real hardware.
+static uint32_t sim_now_ms = 0;
+
+static void sim_delay_ms(uint32_t ms)
+{
+    // DWT-backed with calibrated fallback (same policy as DHT22 driver)
+    static int dwt_ok = -1;
+    if (dwt_ok < 0) {
+        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+        DWT->CYCCNT = 0;
+        uint32_t start = DWT->CYCCNT;
+        for (volatile uint32_t i = 0; i < 1000; i++) { __NOP(); }
+        dwt_ok = (DWT->CYCCNT != start) ? 1 : 0;
+    }
+    while (ms--) {
+        if (dwt_ok) {
+            uint32_t start = DWT->CYCCNT;
+            uint32_t ticks = SystemCoreClock / 1000UL;
+            while ((DWT->CYCCNT - start) < ticks) {}
+        } else {
+            uint32_t loops = SystemCoreClock / 7000000UL * 1000U;
+            while (loops--) { __NOP(); }
+        }
+        sim_now_ms++;
+    }
+}
+
+static void sim_print_line(uint8_t src, const char *l1, const char *l2)
+{
+    char buf[80];
+    snprintf(buf, sizeof(buf), "[%8lu] SRC=0x%02X | %-16s | %s\r\n",
+             (unsigned long)sim_now_ms, src, l1, l2);
+    UART_Driver_PrintRaw(buf);
+    HAL_GPIO_TogglePin(LED_STATUS_PORT, LED_STATUS_PIN);
+}
+
+static void run_sim_superloop(void)
+{
+    UART_Driver_PrintRaw("[BOOT] SIM_SUPERLOOP: cooperative mode "
+                         "(Wokwi delivers no interrupts)\r\n");
+
+    // LCD splash (same as Output Manager boot path)
+    bool lcd_ok = (LCD_Init() == HAL_OK);
+    if (lcd_ok) lcd_ok = (LCD_Clear() == HAL_OK);
+    if (lcd_ok) { LCD_SetCursor(0, 0); LCD_Print("Gateway Booting"); }
+    if (lcd_ok) { LCD_SetCursor(1, 0); lcd_ok = (LCD_Print("Waiting for data") == HAL_OK); }
+    if (!lcd_ok) UART_Driver_PrintRaw("[ERR] LCD init failed (I2C)\r\n");
+
+    char line1[17], line2[17];
+    char latest_l1[17] = "Gateway Booting";
+    char latest_l2[17] = "Waiting for data";
+    uint32_t last_adc = 0, last_dht = 0, last_mpu = 0, last_lcd = 0, last_diag = 0;
+    uint32_t routed = 0;
+
+    for (;;)
+    {
+        sim_delay_ms(1);
+
+        // ADC @ 20 Hz
+        if (sim_now_ms - last_adc >= 50U) {
+            last_adc = sim_now_ms;
+            uint16_t raw = 0;
+            if (ADC_Driver_Read(&raw) == HAL_OK) {
+                uint16_t mv = (uint16_t)(((uint32_t)raw * ADC_VREF_MV) / 4095U);
+                snprintf(line1, sizeof(line1), "ADC:%umV", (unsigned)mv);
+                snprintf(line2, sizeof(line2), "Raw:%u", (unsigned)raw);
+                sim_print_line(0x01, line1, line2);
+                snprintf(latest_l1, sizeof(latest_l1), "ADC:%umV", (unsigned)mv);
+                snprintf(latest_l2, sizeof(latest_l2), "Raw:%u", (unsigned)raw);
+                routed++;
+            }
+        }
+
+        // MPU6050 @ 2 Hz (reads are fast; prints throttled for readability)
+        if (sim_now_ms - last_mpu >= 500U) {
+            last_mpu = sim_now_ms;
+            MPU6050_RawData_t m;
+            if (MPU6050_ReadAll(&m) == HAL_OK) {
+                snprintf(line1, sizeof(line1), "A:%d,%d", (int)m.accel_x, (int)m.accel_y);
+                snprintf(line2, sizeof(line2), "G:%d,%d", (int)m.gyro_x, (int)m.gyro_y);
+                sim_print_line(0x03, line1, line2);
+                snprintf(latest_l1, sizeof(latest_l1), "A:%d,%d", (int)m.accel_x, (int)m.accel_y);
+                snprintf(latest_l2, sizeof(latest_l2), "G:%d,%d", (int)m.gyro_x, (int)m.gyro_y);
+                routed++;
+            } else {
+                UART_Driver_PrintRaw("[ERR] MPU6050 I2C read failed\r\n");
+                MPU6050_Recover();
+            }
+        }
+
+        // DHT22 @ 0.5 Hz (2 s sensor minimum)
+        if (sim_now_ms - last_dht >= SAMPLE_PERIOD_DHT22_MS) {
+            last_dht = sim_now_ms;
+            DHT22_Data_t d;
+            DHT22_Status_t st = DHT22_Read(&d);
+            if (st == DHT22_OK) {
+                int t_whole = d.temperature_x10 / 10;
+                int t_frac  = d.temperature_x10 % 10; if (t_frac < 0) t_frac = -t_frac;
+                snprintf(line1, sizeof(line1), "T:%d.%dC", t_whole, t_frac);
+                snprintf(line2, sizeof(line2), "H:%u.%u%%RH",
+                         (unsigned)(d.humidity_x10 / 10), (unsigned)(d.humidity_x10 % 10));
+                sim_print_line(0x02, line1, line2);
+                snprintf(latest_l1, sizeof(latest_l1), "T:%d.%dC", t_whole, t_frac);
+                snprintf(latest_l2, sizeof(latest_l2), "H:%u.%u%%RH",
+                         (unsigned)(d.humidity_x10 / 10), (unsigned)(d.humidity_x10 % 10));
+                routed++;
+            } else {
+                UART_Driver_PrintRaw("[ERR] DHT22 read failed (timeout/checksum)\r\n");
+            }
+        }
+
+        // LCD @ 2 Hz with the latest readings
+        if (lcd_ok && sim_now_ms - last_lcd >= 500U) {
+            last_lcd = sim_now_ms;
+            if (LCD_Clear() == HAL_OK) {
+                LCD_SetCursor(0, 0); LCD_Print(latest_l1);
+                LCD_SetCursor(1, 0); lcd_ok = (LCD_Print(latest_l2) == HAL_OK);
+            } else {
+                lcd_ok = false;
+                UART_Driver_PrintRaw("[ERR] LCD write failed (I2C)\r\n");
+            }
+        }
+
+        // Diagnostics @ 0.1 Hz
+        if (sim_now_ms - last_diag >= 10000U) {
+            last_diag = sim_now_ms;
+            char buf[64];
+            UART_Driver_PrintRaw("════════════════════════════════════════\r\n");
+            snprintf(buf, sizeof(buf), " DIAG SNAPSHOT | Uptime: %lu.%03lu s (superloop)\r\n",
+                     (unsigned long)(sim_now_ms / 1000), (unsigned long)(sim_now_ms % 1000));
+            UART_Driver_PrintRaw(buf);
+            snprintf(buf, sizeof(buf), " ROUTED  Total: %lu packets | HEAP: 0 B [OK]\r\n",
+                     (unsigned long)routed);
+            UART_Driver_PrintRaw(buf);
+            UART_Driver_PrintRaw("════════════════════════════════════════\r\n");
+        }
+    }
+}
+#endif // SIM_SUPERLOOP
 
 // ─── Task Handles ─────────────────────────────────────────────────────────────
 TaskHandle_t hADCTask       = nullptr;
@@ -198,6 +347,7 @@ int main(void)
         UART_Driver_PrintRaw("\r\n");
     }
 
+#if !defined(SIM_SUPERLOOP)
     xHealthGroupHandle = xEventGroupCreateStatic(&xHealthEventGroup);
 
 #ifdef ENABLE_IWDG
@@ -345,6 +495,12 @@ int main(void)
     // Should never reach here
     ErrorHandler_Fatal(ERR_SCHEDULER_FAILED);
     while (1) {}
+#else
+    // Wokwi demo path: the simulator delivers no interrupts (RC-8), so a
+    // preemptive RTOS cannot run there. Same drivers, cooperative superloop.
+    run_sim_superloop();   // never returns
+    while (1) {}
+#endif // !SIM_SUPERLOOP
 }
 
 // ─── Clock Configuration: 64 MHz via PLL (HSI/2 × 16) ─────────────────────────
