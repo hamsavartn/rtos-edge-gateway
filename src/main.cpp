@@ -452,6 +452,13 @@ extern "C" void SysTick_Handler(void)
     // 2. Increment FreeRTOS tick if scheduler is running
     if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
     {
+        // One-shot probe: proves the OS tick fires in the simulator.
+        static bool s_tick_announced = false;
+        if (!s_tick_announced)
+        {
+            s_tick_announced = true;
+            UART_Driver_PrintRaw("[T] tick (SysTick alive)\r\n");
+        }
         extern void xPortSysTickHandler(void);
         xPortSysTickHandler();
     }

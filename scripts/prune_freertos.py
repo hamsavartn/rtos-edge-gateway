@@ -60,12 +60,55 @@ for base in glob.glob(".pio/libdeps/*/FreeRTOS-Kernel/portable"):
     if os.path.isfile(port_c):
         with open(port_c, "r", encoding="utf-8", errors="ignore") as f:
             src = f.read()
+        patched = False
         if "sim-compat" not in src and probe_marker in src:
             src = src.replace(probe_marker, sim_compat_patch, 1)
+            patched = True
+            print("[prune_freertos] applied simulator-compat patch (IPR probe) to " + port_c)
+
+        # -------------------------------------------------------------------
+        # Sim-compat patch #2: SVC-free first task start.
+        # The simulator mishandles the SVC exception-return sequence
+        # (bx EXC_RETURN to thread mode/PSP): control lands on the task's
+        # return address (prvTaskExitError) instead of the task function.
+        # Replace prvPortStartFirstTask's `svc 0` with a manual thread-mode
+        # restore: r4-r11 from the frame, PSP = frame base, basepri unmasked,
+        # then R0/LR/PC loaded and branch into the task (Thumb bit set).
+        # R1/R2/R3/R12 are left as garbage — identical to real silicon, where
+        # those frame slots are stale filler at task entry.
+        # -------------------------------------------------------------------
+        svc_line_key = '" svc 0'
+        svc_compat_lines = [
+            '                /* [rtos-edge-gateway sim-compat2] manual first-task start:',
+            '                 * the simulator\'s SVC exception return lands on the task',
+            '                 * return address instead of the task function. */',
+            '                " ldr r3, =pxCurrentTCB             \\n"',
+            '                " ldr r1, [r3]                      \\n"',
+            '                " ldr r0, [r1]                      \\n" /* pxTopOfStack (R4 slot)   */',
+            '                " ldmia r0!, {r4-r11}               \\n" /* restore r4-r11           */',
+            '                " msr psp, r0                       \\n" /* PSP = frame base (R0)    */',
+            '                " mov r2, r0                        \\n" /* frame base (scratch)     */',
+            '                " movs r0, #0                       \\n"',
+            '                " msr basepri, r0                   \\n" /* unmask interrupts        */',
+            '                " ldr r1, [r2, #24]                 \\n" /* task PC (bit0 cleared)   */',
+            '                " adds r1, r1, #1                   \\n" /* Thumb interworking       */',
+            '                " ldr lr, [r2, #20]                 \\n" /* task LR                  */',
+            '                " ldr r0, [r2, #0]                  \\n" /* task R0 = pvParameters   */',
+            '                " bx r1                             \\n" /* enter the task           */',
+        ]
+        if "sim-compat2" not in src and svc_line_key in src:
+            out_lines = []
+            for line in src.splitlines():
+                if svc_line_key in line and "System call" in line:
+                    out_lines.extend(svc_compat_lines)
+                else:
+                    out_lines.append(line)
+            src = "\n".join(out_lines) + "\n"
+            patched = True
+            print("[prune_freertos] applied simulator-compat2 patch (SVC-free start) to " + port_c)
+        elif "sim-compat2" in src:
+            print("[prune_freertos] sim-compat2 already present: " + port_c)
+
+        if "sim-compat" in src:
             with open(port_c, "w", encoding="utf-8", newline="") as f:
                 f.write(src)
-            print("[prune_freertos] applied simulator-compat patch to " + port_c)
-        elif "sim-compat" in src:
-            print("[prune_freertos] simulator-compat patch already present: " + port_c)
-        else:
-            print("[prune_freertos] WARNING: probe marker not found in " + port_c)
