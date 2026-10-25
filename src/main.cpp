@@ -40,6 +40,9 @@
 #include <stdio.h>
 
 // ─── FreeRTOS Static Task Buffers ────────────────────────────────────────────
+// Only the full RTOS build creates the 9 tasks; sim/canary builds compile
+// these out to avoid unused-variable warnings.
+#if !defined(SIM_SUPERLOOP) && !defined(CANARY_ONLY)
 
 // Task 1: ADC Sensor
 static StaticTask_t  xADCTaskBuffer;
@@ -77,7 +80,11 @@ alignas(8) static StackType_t   xDiagStack[STACK_SIZE_SYSTEM];
 static StaticTask_t  xWatchdogTaskBuffer;
 alignas(8) static StackType_t   xWatchdogStack[STACK_SIZE_SYSTEM];
 
+#endif // !SIM_SUPERLOOP && !CANARY_ONLY
+
+#if !defined(SIM_SUPERLOOP)
 static StaticEventGroup_t xHealthEventGroup;
+#endif
 EventGroupHandle_t xHealthGroupHandle = nullptr;
 
 #ifdef CANARY_ONLY

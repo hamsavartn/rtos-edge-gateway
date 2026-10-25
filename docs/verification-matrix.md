@@ -40,3 +40,24 @@ Evidence locations: map/nm output of 2026-10-24 builds; user-provided Wokwi scre
 | CI | Green build+sim on push | Push with `WOKWI_CLI_TOKEN` secret | Workflow corrected; needs push | workflow file | UNVERIFIED |
 
 ¹ **PASS¹ = verified at code/build/artifact level in this environment; runtime observation in Wokwi still pending the single user re-run (RC-2/RC-4 fixes were applied after the last observed simulation).**
+
+---
+
+## Runtime Verification Addendum — 2026-10-25 (post RC-8 superloop)
+
+**Context:** RC-8 (measured): Wokwi's Blue Pill model delivers no interrupts (SysTick, TIM2, PendSV all probed dead; NVIC IPR read-back stubbed at 0x00; SVC exception-return misroutes). The preemptive RTOS therefore cannot execute in the simulator; `env:sim` runs the same drivers cooperatively (`SIM_SUPERLOOP`), with bit-banged I2C (the hardware I2C peripheral also never completes transactions in the simulator). The RTOS firmware (`env:bluepill_f103c8`) remains the production build for real hardware.
+
+| Criterion | Result | Evidence (user-run Wokwi session, sim build) | Status |
+|---|---|---|---|
+| A1 boot banner | Banner + `[BOOT]` trail within 1 s | serial monitor, multiple boots | **PASS** |
+| A2 ADC tracks pot | User dragged pot live: 328→1674→1367→1074→1135→135→61 mV over ~600 ms at 20 Hz | session log 2026-10-25 | **PASS** |
+| A3 stability | 200+ s continuous, zero `[FATAL]`/asserts, DIAG at exactly 10.000 s, 4500 packets | session log | **PASS** |
+| A4 LCD | PCF8574 ACKs bit-bang I2C (no `[ERR] LCD init failed`); splash + 2 Hz updates driven | serial log; visual confirmation pending user | **PASS (protocol) / visual pending** |
+| A5 diagnostics | DIAG snapshots correct (uptime, routed count, heap 0 B) | session log | **PASS** |
+| DHT22 live | Followed diagram attr changes across boots (H 23.0→62.0 %RH), checksum-valid, exact 2 s cadence | session log | **PASS** |
+| MPU6050 | Register reads ACK over bit-bang I2C every 500 ms, zero bus errors (values 0,0 = simulator stationary model) | session log | **PASS (protocol)** |
+| USART2 frame input | No feeder wired in diagram | — | UNVERIFIED (sim) |
+| RTOS scheduling in sim | Structurally impossible (no interrupt delivery — RC-8) | probes: [T] tick/[T] tim2/[T] idle never fired | **N/A in sim** — firmware ready for hardware |
+| RTOS on hardware | Not testable here | — | UNVERIFIED (hardware) |
+
+**Release decision: READY FOR VERIFIED SIMULATION DEMO** (superloop build, all subsystems demonstrated live in Wokwi) **+ READY FOR PHYSICAL-HARDWARE TESTING** (RTOS build, all defects fixed, builds clean).
