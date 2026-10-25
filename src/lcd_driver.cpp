@@ -7,6 +7,10 @@
 #include "mpu6050_driver.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#ifdef SIM_SUPERLOOP
+#include "i2c_bitbang.h"
+#define LCD_ADDR7 (LCD_I2C_ADDR >> 1)
+#endif
 
 // PCF8574 to HD44780 Pin Masks
 #define LCD_EN 0x04 // Enable bit (P2)
@@ -65,7 +69,11 @@ static HAL_StatusTypeDef LCD_SendInternal(uint8_t data, uint8_t flags) {
     if (p_hi2c1 == NULL) return HAL_ERROR;
     
     if (I2C_TakeMutex(100)) {
+#ifdef SIM_SUPERLOOP
+        status = (bb_i2c_write(LCD_ADDR7, data_arr, 4) == 0) ? HAL_OK : HAL_ERROR;
+#else
         status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 4, 100);
+#endif
         I2C_GiveMutex();
     } else {
         return HAL_BUSY;
@@ -90,7 +98,11 @@ static HAL_StatusTypeDef LCD_SendNibble(uint8_t nibble, uint8_t flags) {
     if (p_hi2c1 == NULL) return HAL_ERROR;
     
     if (I2C_TakeMutex(100)) {
+#ifdef SIM_SUPERLOOP
+        status = (bb_i2c_write(LCD_ADDR7, data_arr, 2) == 0) ? HAL_OK : HAL_ERROR;
+#else
         status = HAL_I2C_Master_Transmit(p_hi2c1, LCD_I2C_ADDR, data_arr, 2, 100);
+#endif
         I2C_GiveMutex();
     } else {
         return HAL_BUSY;

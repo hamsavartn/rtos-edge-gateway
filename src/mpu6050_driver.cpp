@@ -17,6 +17,10 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
+#ifdef SIM_SUPERLOOP
+#include "i2c_bitbang.h"
+#define MPU_ADDR7 (MPU6050_I2C_ADDR >> 1)
+#endif
 
 static I2C_HandleTypeDef hi2c1;
 static StaticSemaphore_t xI2CMutexBuf;
@@ -53,7 +57,11 @@ static HAL_StatusTypeDef mpu_write(uint8_t reg, uint8_t val)
     HAL_StatusTypeDef s = HAL_ERROR;
     uint8_t buf[2] = { reg, val };
     if (I2C_TakeMutex(50)) {
+#ifdef SIM_SUPERLOOP
+        s = (bb_i2c_write(MPU_ADDR7, buf, 2) == 0) ? HAL_OK : HAL_ERROR;
+#else
         s = HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, buf, 2, 10);
+#endif
         I2C_GiveMutex();
     }
     return s;
@@ -64,10 +72,14 @@ static HAL_StatusTypeDef mpu_read(uint8_t reg, uint8_t *data, uint16_t len)
 {
     HAL_StatusTypeDef s = HAL_ERROR;
     if (I2C_TakeMutex(50)) {
+#ifdef SIM_SUPERLOOP
+        s = (bb_i2c_write_read(MPU_ADDR7, &reg, 1, data, len) == 0) ? HAL_OK : HAL_ERROR;
+#else
         s = HAL_I2C_Master_Transmit(&hi2c1, MPU6050_I2C_ADDR, &reg, 1, 10);
         if (s == HAL_OK) {
             s = HAL_I2C_Master_Receive(&hi2c1, MPU6050_I2C_ADDR, data, len, 10);
         }
+#endif
         I2C_GiveMutex();
     }
     return s;
@@ -76,7 +88,8 @@ static HAL_StatusTypeDef mpu_read(uint8_t reg, uint8_t *data, uint16_t len)
 // ─── Init ─────────────────────────────────────────────────────────────────────
 HAL_StatusTypeDef MPU6050_Init(void)
 {
-    // I2C1 peripheral init
+#ifndef SIM_SUPERLOOP
+    // I2C1 peripheral init (hardware I2C — real hardware builds)
     __HAL_RCC_I2C1_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
@@ -97,6 +110,11 @@ HAL_StatusTypeDef MPU6050_Init(void)
     hi2c1.Init.NoStretchMode   = I2C_NOSTRETCH_DISABLE;
 
     if (HAL_I2C_Init(&hi2c1) != HAL_OK) return HAL_ERROR;
+#else
+    // Simulator: hardware I2C peripheral does not complete transactions in
+    // Wokwi; the same pins carry a bit-banged 100 kHz master instead.
+    if (bb_i2c_init() != 0) return HAL_ERROR;
+#endif
 
     if (hI2CMutex == NULL) {
         hI2CMutex = xSemaphoreCreateMutexStatic(&xI2CMutexBuf);

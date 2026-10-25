@@ -179,7 +179,6 @@ static void run_sim_superloop(void)
                 routed++;
             } else {
                 UART_Driver_PrintRaw("[ERR] MPU6050 I2C read failed\r\n");
-                MPU6050_Recover();
             }
         }
 
