@@ -176,6 +176,7 @@ int main(void)
     IWDG->KR = 0xCCCC; // Start IWDG
 #endif
 
+#ifndef CANARY_ONLY
     // ── Spawn Task 1: ADC Sensor ─────────────────────────────────────────────
     hADCTask = xTaskCreateStatic(
         vTaskADCSensor,
@@ -285,14 +286,10 @@ int main(void)
     configASSERT(hErrorTask    != nullptr);
     configASSERT(hDiagTask     != nullptr);
     configASSERT(hWatchdogTask != nullptr);
+#endif // !CANARY_ONLY
     configASSERT(xHealthGroupHandle != nullptr);
 
-#ifndef CANARY_ONLY
-    boot_trace("S3 tasks spawned");
-
-    // Hand control to FreeRTOS scheduler — never returns
-    boot_trace("S4 starting scheduler");
-#else
+#ifdef CANARY_ONLY
     (void)hADCTask; (void)hDHT22Task; (void)hMPU6050Task; (void)hUARTSensTask;
     (void)hQueueMgrTask; (void)hOutputTask; (void)hErrorTask; (void)hDiagTask;
     (void)hWatchdogTask;
@@ -300,6 +297,11 @@ int main(void)
                       nullptr, PRIORITY_SENSOR,
                       xCanaryStack, &xCanaryTaskBuffer);
     boot_trace("S3c canary spawned (CANARY_ONLY build)");
+#else
+    boot_trace("S3 tasks spawned");
+
+    // Hand control to FreeRTOS scheduler — never returns
+    boot_trace("S4 starting scheduler");
 #endif
     vTaskStartScheduler();
 
