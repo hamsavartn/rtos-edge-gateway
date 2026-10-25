@@ -5,26 +5,34 @@ import shutil, os, glob
 for base in glob.glob(".pio/libdeps/*/FreeRTOS-Kernel/portable"):
     keep_top = {"GCC", "MemMang", "Common"}
 
+    def rmtree_safe(path):
+        # Pruning is a size optimization only — never fail the build over a
+        # locked or read-only folder (Windows denies access on .github etc.).
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError as exc:
+            print("[prune_freertos] WARNING: could not remove %s (%s)" % (path, exc))
+
     for item in os.listdir(base):
         if item not in keep_top:
-            path = os.path.join(base, item)
-            if os.path.isdir(path):
-                shutil.rmtree(path)
+            rmtree_safe(os.path.join(base, item))
 
     gcc_path = os.path.join(base, "GCC")
     if os.path.isdir(gcc_path):
         for item in os.listdir(gcc_path):
             if item != "ARM_CM3":
-                path = os.path.join(gcc_path, item)
-                if os.path.isdir(path):
-                    shutil.rmtree(path)
+                rmtree_safe(os.path.join(gcc_path, item))
 
     heap_path = os.path.join(base, "MemMang")
     if os.path.isdir(heap_path):
         for item in os.listdir(heap_path):
             file_path = os.path.join(heap_path, item)
             if os.path.isfile(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except OSError as exc:
+                    print("[prune_freertos] WARNING: could not remove %s (%s)" % (file_path, exc))
 
     # -----------------------------------------------------------------------
     # Simulator compatibility patch (FreeRTOS-Kernel V11.3.1, ARM_CM3 port.c).
